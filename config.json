@@ -1,0 +1,21 @@
+{
+    "prefix": "!",
+    "sales_channel": 1490989769717715055,
+    "ticket_category": 1490826201080529026,
+    "admin_roles": [
+        1490998019603042496,
+        1489348443670446240
+    ],
+    "support_roles": [],
+    "log_channel": 1490989967957295104,
+    "payment_methods": [
+        "PayPal",
+        "Bitcoin",
+        "Ethereum",
+        "Bank Transfer"
+    ],
+    "embed_color": "0x00ff9d",
+    "footer_text": "ZeroDay Tools",
+    "thumbnail_url": "https://i.imgur.com/your_logo.png",
+    "rules_message_id": 1491000491260248135
+}
