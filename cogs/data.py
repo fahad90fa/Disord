@@ -1,54 +1,30 @@
 import discord
 from discord.ext import commands
+import aiohttp
 import asyncio
 import re
 import json
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
-import time
+from bs4 import BeautifulSoup
+from datetime import datetime
 
 
-class CNICLookupSelenium(commands.Cog):
+class CNICLookupRailway(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.base_url = "https://pakistandatabase.com/databases/sim.php"
-        self.active_lookups = set()
-    
-    def get_driver(self):
-        """Initialize Chrome driver with headless mode"""
-        chrome_options = Options()
-        chrome_options.add_argument('--headless')
-        chrome_options.add_argument('--no-sandbox')
-        chrome_options.add_argument('--disable-dev-shm-usage')
-        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-        chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
-        chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-        chrome_options.add_experimental_option('useAutomationExtension', False)
-        
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=chrome_options)
-        
-        # Execute JavaScript to hide webdriver
-        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-        
-        return driver
+        self.active_lookups = {}
     
     def validate_cnic(self, cnic_input):
         """Validate CNIC format"""
         clean_cnic = re.sub(r'[^0-9]', '', cnic_input)
         return clean_cnic if len(clean_cnic) == 13 else None
     
-    @commands.command(name='cnic', aliases=['lookup', 'sim'])
+    @commands.command(name='cnic', aliases=['lookup', 'sim', 'search'])
     async def cnic_lookup(self, ctx):
-        """CNIC/SIM Database Lookup using Selenium"""
+        """CNIC/SIM Database Lookup - Railway Compatible"""
         
         if ctx.author.id in self.active_lookups:
-            await ctx.send("```\n❌ You already have an active lookup! Please wait.\n```")
+            await ctx.send("```\n❌ You already have an active lookup!\n```")
             return
         
         prompt_embed = discord.Embed(
@@ -63,14 +39,14 @@ class CNICLookupSelenium(commands.Cog):
                 "```\n"
                 "**Please enter the 13-digit CNIC number:**\n\n"
                 "📝 **Format:** `XXXXX-XXXXXXX-X` or `XXXXXXXXXXXXX`\n\n"
-                "**Example:**\n"
+                "**Examples:**\n"
                 "`37405-1989162-8`\n"
                 "`3740519891628`\n\n"
                 "⏱️ **Timeout:** 60 seconds\n"
                 "Type `cancel` to abort."
             ),
             color=0x00D9FF,
-            timestamp=discord.utils.utcnow()
+            timestamp=datetime.utcnow()
         )
         
         prompt_embed.add_field(
@@ -86,7 +62,7 @@ class CNICLookupSelenium(commands.Cog):
             inline=False
         )
         
-        prompt_embed.set_footer(text="ZeroDay Tool • Powered by Browser Automation")
+        prompt_embed.set_footer(text="ZeroDay Tool • Railway Hosted")
         prompt_embed.set_thumbnail(url="https://flagcdn.com/w320/pk.png")
         
         await ctx.send(embed=prompt_embed)
@@ -121,17 +97,19 @@ class CNICLookupSelenium(commands.Cog):
             
             formatted_cnic = f"{cnic[:5]}-{cnic[5:12]}-{cnic[12]}"
             
-            loading_embed = discord.Embed(
-                title="🌐 Launching Browser Automation",
+            # Mark as active
+            self.active_lookups[ctx.author.id] = True
+            
+            # Show processing message
+            processing_embed = discord.Embed(
+                title="🔄 Processing Request",
                 description=(
                     "```\n"
                     "┌───────────────────────────────────────────────────┐\n"
                     "│                                                   │\n"
                     f"│  CNIC     : {formatted_cnic}                      │\n"
-                    "│  Status   : Starting headless browser...         │\n"
-                    "│  Progress : ████░░░░░░░░░░░░░░░░  20%            │\n"
-                    "│                                                   │\n"
-                    "│  This may take 15-30 seconds...                   │\n"
+                    "│  Status   : Generating lookup link...            │\n"
+                    "│  Method   : Direct Website Access                │\n"
                     "│                                                   │\n"
                     "└───────────────────────────────────────────────────┘\n"
                     "```"
@@ -139,392 +117,293 @@ class CNICLookupSelenium(commands.Cog):
                 color=0xFFA500
             )
             
-            loading_msg = await ctx.send(embed=loading_embed)
+            processing_msg = await ctx.send(embed=processing_embed)
             
-            self.active_lookups.add(ctx.author.id)
+            # Wait a moment for effect
+            await asyncio.sleep(2)
             
-            # Run selenium in executor to avoid blocking
-            results = await self.bot.loop.run_in_executor(
-                None, 
-                self.scrape_with_selenium, 
-                cnic, 
-                ctx, 
-                loading_msg
-            )
+            await processing_msg.delete()
             
-            await loading_msg.delete()
+            # Generate lookup result
+            await self.generate_lookup_result(ctx, cnic, formatted_cnic)
             
-            if not results or len(results) == 0:
-                no_result_embed = discord.Embed(
-                    title="❌ No Results Found",
-                    description=(
-                        "```\n"
-                        "╔═══════════════════════════════════════════════════════╗\n"
-                        "║              NO RECORDS FOUND                         ║\n"
-                        "╠═══════════════════════════════════════════════════════╣\n"
-                        f"║   CNIC: {formatted_cnic}                    ║\n"
-                        "║                                                       ║\n"
-                        "║   Possible reasons:                                   ║\n"
-                        "║   • CNIC not in database                              ║\n"
-                        "║   • Website structure changed                         ║\n"
-                        "║   • Temporary access issues                           ║\n"
-                        "║                                                       ║\n"
-                        "╚═══════════════════════════════════════════════════════╝\n"
-                        "```"
-                    ),
-                    color=0xFF0000,
-                    timestamp=discord.utils.utcnow()
-                )
-                
-                no_result_embed.add_field(
-                    name="💡 Try",
-                    value=(
-                        "• Verify CNIC is correct\n"
-                        "• Check website: https://pakistandatabase.com\n"
-                        "• Try again in a few minutes"
-                    ),
-                    inline=False
-                )
-                
-                await ctx.send(embed=no_result_embed)
-                self.active_lookups.discard(ctx.author.id)
-                return
-            
-            await self.display_results(ctx, formatted_cnic, results)
-            self.active_lookups.discard(ctx.author.id)
+            # Remove from active lookups
+            del self.active_lookups[ctx.author.id]
             
         except asyncio.TimeoutError:
             timeout_embed = discord.Embed(
                 title="⏱️ Session Timeout",
-                description="```\n⏱️ Request timeout!\nUse !cnic to try again.\n```",
+                description=(
+                    "```\n"
+                    "╔═══════════════════════════════════════════════════════╗\n"
+                    "║              REQUEST TIMEOUT                          ║\n"
+                    "╠═══════════════════════════════════════════════════════╣\n"
+                    "║                                                       ║\n"
+                    "║   You took too long to respond!                       ║\n"
+                    "║   Use !cnic to start a new lookup.                    ║\n"
+                    "║                                                       ║\n"
+                    "╚═══════════════════════════════════════════════════════╝\n"
+                    "```"
+                ),
                 color=0xFF6B35
             )
             await ctx.send(embed=timeout_embed)
-            self.active_lookups.discard(ctx.author.id)
             
         except Exception as e:
             error_embed = discord.Embed(
-                title="❌ Error",
-                description=f"```\nError: {str(e)}\n```",
+                title="❌ Error Occurred",
+                description=f"```\n{str(e)}\n```",
                 color=0xFF0000
             )
             await ctx.send(embed=error_embed)
-            self.active_lookups.discard(ctx.author.id)
-    
-    def scrape_with_selenium(self, cnic, ctx, loading_msg):
-        """Scrape data using Selenium browser automation"""
-        driver = None
-        
-        try:
-            driver = self.get_driver()
-            
-            # Navigate to website
-            driver.get(self.base_url)
-            
-            # Wait for page to load
-            time.sleep(2)
-            
-            # Update loading message (async)
-            asyncio.run_coroutine_threadsafe(
-                loading_msg.edit(embed=discord.Embed(
-                    title="🔍 Searching Database",
-                    description=(
-                        "```\n"
-                        "┌───────────────────────────────────────────────────┐\n"
-                        "│  Status   : Page loaded, entering CNIC...        │\n"
-                        "│  Progress : ████████████░░░░░░░░  60%            │\n"
-                        "└───────────────────────────────────────────────────┘\n"
-                        "```"
-                    ),
-                    color=0xFFA500
-                )),
-                self.bot.loop
-            )
-            
-            # Find CNIC input field (try multiple selectors)
-            cnic_input = None
-            selectors = [
-                "input[name='cnic']",
-                "input[id='cnic']",
-                "input[type='text']",
-                "input[placeholder*='CNIC']",
-                "input[placeholder*='cnic']"
-            ]
-            
-            for selector in selectors:
-                try:
-                    cnic_input = driver.find_element(By.CSS_SELECTOR, selector)
-                    if cnic_input:
-                        break
-                except:
-                    continue
-            
-            if not cnic_input:
-                # Try by xpath
-                try:
-                    cnic_input = driver.find_element(By.XPATH, "//input[@type='text']")
-                except:
-                    pass
-            
-            if not cnic_input:
-                print("Could not find CNIC input field")
-                return None
-            
-            # Clear and enter CNIC
-            cnic_input.clear()
-            cnic_input.send_keys(cnic)
-            
-            time.sleep(1)
-            
-            # Find and click submit button
-            submit_button = None
-            button_selectors = [
-                "input[type='submit']",
-                "button[type='submit']",
-                "input[value='Search']",
-                "button:contains('Search')",
-                "input[name='submit']"
-            ]
-            
-            for selector in button_selectors:
-                try:
-                    submit_button = driver.find_element(By.CSS_SELECTOR, selector)
-                    if submit_button:
-                        break
-                except:
-                    continue
-            
-            if not submit_button:
-                try:
-                    submit_button = driver.find_element(By.XPATH, "//input[@type='submit']")
-                except:
-                    pass
-            
-            if submit_button:
-                submit_button.click()
-            else:
-                # Try form submission
-                cnic_input.submit()
-            
-            # Wait for results
-            time.sleep(3)
-            
-            # Update loading
-            asyncio.run_coroutine_threadsafe(
-                loading_msg.edit(embed=discord.Embed(
-                    title="📊 Extracting Data",
-                    description=(
-                        "```\n"
-                        "┌───────────────────────────────────────────────────┐\n"
-                        "│  Status   : Parsing results...                   │\n"
-                        "│  Progress : ████████████████████  95%            │\n"
-                        "└───────────────────────────────────────────────────┘\n"
-                        "```"
-                    ),
-                    color=0xFFA500
-                )),
-                self.bot.loop
-            )
-            
-            # Extract results from page
-            results = self.extract_results(driver)
-            
-            return results
-            
-        except Exception as e:
-            print(f"Selenium error: {e}")
-            return None
             
         finally:
-            if driver:
-                driver.quit()
+            if ctx.author.id in self.active_lookups:
+                del self.active_lookups[ctx.author.id]
     
-    def extract_results(self, driver):
-        """Extract results from loaded page"""
-        results = []
+    async def generate_lookup_result(self, ctx, cnic, formatted_cnic):
+        """Generate lookup result with direct website link"""
         
-        try:
-            # Wait for results to appear
-            wait = WebDriverWait(driver, 10)
-            
-            # Method 1: Try to find result table
-            try:
-                tables = driver.find_elements(By.TAG_NAME, "table")
-                
-                for table in tables:
-                    rows = table.find_elements(By.TAG_NAME, "tr")
-                    
-                    for row in rows[1:]:  # Skip header
-                        cells = row.find_elements(By.TAG_NAME, "td")
-                        
-                        if len(cells) >= 3:
-                            result = {
-                                'name': cells[0].text.strip() if len(cells) > 0 else 'N/A',
-                                'cnic': cells[1].text.strip() if len(cells) > 1 else 'N/A',
-                                'number': cells[2].text.strip() if len(cells) > 2 else 'N/A',
-                                'address': cells[3].text.strip() if len(cells) > 3 else 'N/A'
-                            }
-                            
-                            if result['name'] != 'N/A' or result['number'] != 'N/A':
-                                results.append(result)
-            except:
-                pass
-            
-            # Method 2: Try finding result divs
-            if not results:
-                try:
-                    result_divs = driver.find_elements(By.CSS_SELECTOR, ".result, .record, .data-row")
-                    
-                    for div in result_divs:
-                        text = div.text
-                        result = self.parse_text_result(text)
-                        if result:
-                            results.append(result)
-                except:
-                    pass
-            
-            # Method 3: Get entire page text and parse
-            if not results:
-                page_text = driver.find_element(By.TAG_NAME, "body").text
-                results = self.parse_page_text(page_text)
-            
-            # Method 4: Take screenshot for debugging (optional)
-            # driver.save_screenshot('debug_screenshot.png')
-            
-            return results
-            
-        except Exception as e:
-            print(f"Extraction error: {e}")
-            return None
-    
-    def parse_text_result(self, text):
-        """Parse result from text block"""
-        result = {}
-        
-        lines = text.split('\n')
-        
-        for line in lines:
-            line_lower = line.lower()
-            
-            if 'name' in line_lower and ':' in line:
-                result['name'] = line.split(':', 1)[1].strip()
-            elif 'cnic' in line_lower and ':' in line:
-                result['cnic'] = line.split(':', 1)[1].strip()
-            elif any(x in line_lower for x in ['mobile', 'number', 'phone']) and ':' in line:
-                result['number'] = line.split(':', 1)[1].strip()
-            elif 'address' in line_lower and ':' in line:
-                result['address'] = line.split(':', 1)[1].strip()
-        
-        return result if len(result) >= 2 else None
-    
-    def parse_page_text(self, text):
-        """Parse entire page text for results"""
-        results = []
-        
-        # Find mobile numbers
-        mobile_pattern = r'(?:\+92|0)?3[0-9]{9}'
-        mobiles = re.findall(mobile_pattern, text)
-        
-        # Find CNICs
-        cnic_pattern = r'\d{5}-?\d{7}-?\d'
-        cnics = re.findall(cnic_pattern, text)
-        
-        # Try to find names (capital letters pattern)
-        name_pattern = r'(?:Name|NAME)[:\s]+([A-Z][A-Za-z\s]+)'
-        names = re.findall(name_pattern, text)
-        
-        # Combine results
-        max_len = max(len(names), len(cnics), len(mobiles))
-        
-        for i in range(max_len):
-            result = {
-                'name': names[i] if i < len(names) else 'N/A',
-                'cnic': cnics[i] if i < len(cnics) else 'N/A',
-                'number': mobiles[i] if i < len(mobiles) else 'N/A',
-                'address': 'See website for full details'
-            }
-            results.append(result)
-        
-        return results if results else None
-    
-    async def display_results(self, ctx, cnic, results):
-        """Display results in embeds"""
-        
-        success_embed = discord.Embed(
-            title="✅ Records Found",
+        result_embed = discord.Embed(
+            title="🔗 CNIC Lookup Generated",
             description=(
                 "```\n"
                 "╔═══════════════════════════════════════════════════════╗\n"
-                "║           DATABASE QUERY SUCCESSFUL                   ║\n"
-                "╠══════���════════════════════════════════════════════════╣\n"
-                f"║   CNIC         : {cnic}                    ║\n"
-                f"║   Records      : {len(results)} found                              ║\n"
-                "║   Method       : Browser Automation                   ║\n"
-                "║   Status       : ✅ Complete                          ║\n"
-                "║                                                       ║\n"
+                "║           LOOKUP LINK GENERATED                       ║\n"
+                "╠═══════════════════════════════════════════════════════╣\n"
+                f"║   CNIC: {formatted_cnic}                    ║\n"
+                "║   Status: Ready for manual search                     ║\n"
                 "╚═══════════════════════════════════════════════════════╝\n"
                 "```"
             ),
-            color=0x00FF00,
-            timestamp=discord.utils.utcnow()
+            color=0x5865F2,
+            timestamp=datetime.utcnow()
         )
         
-        success_embed.set_thumbnail(url="https://flagcdn.com/w320/pk.png")
-        await ctx.send(embed=success_embed)
+        result_embed.add_field(
+            name="🌐 Search Methods",
+            value=(
+                f"**Method 1: Direct Link**\n"
+                f"[🔗 Click Here to Open Database]({self.base_url})\n\n"
+                f"**Method 2: Alternative Search**\n"
+                f"[🔗 CNIC.pk Search](https://cnic.pk)\n\n"
+                f"**Method 3: Manual Entry**\n"
+                f"Visit: `pakistandatabase.com`\n"
+                f"Enter CNIC: `{cnic}`"
+            ),
+            inline=False
+        )
         
-        for i, result in enumerate(results[:10], 1):
-            result_embed = discord.Embed(
-                title=f"📋 Record #{i}",
-                color=0x00D9FF
-            )
-            
-            result_embed.add_field(
-                name="👤 Full Name",
-                value=f"```{result.get('name', 'N/A')}```",
-                inline=False
-            )
-            
-            result_embed.add_field(
-                name="🆔 CNIC",
-                value=f"```{result.get('cnic', 'N/A')}```",
-                inline=True
-            )
-            
-            result_embed.add_field(
-                name="📱 Mobile",
-                value=f"```{result.get('number', 'N/A')}```",
-                inline=True
-            )
-            
-            result_embed.add_field(
-                name="📍 Address",
-                value=f"```{result.get('address', 'N/A')[:200]}```",
-                inline=False
-            )
-            
-            result_embed.set_footer(text=f"Record {i} of {len(results)}")
-            
-            await ctx.send(embed=result_embed)
+        result_embed.add_field(
+            name="📋 Step-by-Step Guide",
+            value=(
+                "```yaml\n"
+                "Step 1: Click the blue link above\n"
+                "Step 2: Website will open in browser\n"
+                f"Step 3: Enter CNIC: {cnic}\n"
+                "Step 4: Click 'Search' or 'Submit'\n"
+                "Step 5: View results on website\n"
+                "```"
+            ),
+            inline=False
+        )
         
-        if len(results) > 10:
-            await ctx.send(f"```\nℹ️ Showing 10 of {len(results)} results.\n```")
+        result_embed.add_field(
+            name="📱 CNIC Details",
+            value=(
+                f"```\n"
+                f"Full CNIC  : {formatted_cnic}\n"
+                f"Digits     : {cnic}\n"
+                f"Province   : {self.get_province(cnic[:5])}\n"
+                f"Gender     : {self.get_gender(cnic[12])}\n"
+                f"```"
+            ),
+            inline=False
+        )
         
-        disclaimer_embed = discord.Embed(
-            title="⚠️ Important Notice",
-            description=(
+        result_embed.add_field(
+            name="⚠️ Why Manual Lookup?",
+            value=(
                 "```diff\n"
-                "- Educational purposes only\n"
-                "+ Use responsibly and legally\n"
-                "+ Respect privacy laws\n"
-                "```\n\n"
-                "**📊 Source:** Pakistan Database\n"
-                f"**⏰ Retrieved:** {discord.utils.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}"
+                "- Website uses anti-bot protection\n"
+                "- CAPTCHA verification required\n"
+                "- JavaScript-based rendering\n"
+                "+ Direct link provides instant access\n"
+                "+ More reliable than automation\n"
+                "```"
+            ),
+            inline=False
+        )
+        
+        result_embed.add_field(
+            name="💡 Pro Tips",
+            value=(
+                "• Use incognito/private mode\n"
+                "• Clear browser cache if issues\n"
+                "• Try different browsers\n"
+                "• Check website is accessible"
+            ),
+            inline=False
+        )
+        
+        result_embed.set_thumbnail(url="https://flagcdn.com/w320/pk.png")
+        result_embed.set_footer(
+            text=f"Requested by {ctx.author.name} • Railway Hosted Bot",
+            icon_url=ctx.author.display_avatar.url
+        )
+        
+        # Create button view
+        view = LookupButtonView(self.base_url, cnic)
+        
+        await ctx.send(embed=result_embed, view=view)
+        
+        # Send additional info
+        info_embed = discord.Embed(
+            title="📊 Additional Information",
+            description=(
+                "**🔒 Privacy & Security:**\n"
+                "• Data from public sources only\n"
+                "• No data stored by this bot\n"
+                "• Respect privacy laws\n\n"
+                "**⚖️ Legal Notice:**\n"
+                "• Use for legitimate purposes only\n"
+                "• Educational purposes only\n"
+                "• Misuse may result in legal action\n\n"
+                "**📞 Support:**\n"
+                "• Use `!ticket` for help\n"
+                "• Report issues to staff\n"
             ),
             color=0xFF6B35
         )
         
-        await ctx.send(embed=disclaimer_embed)
+        await ctx.send(embed=info_embed)
+    
+    def get_province(self, code):
+        """Get province from CNIC code"""
+        provinces = {
+            '1': 'Islamabad',
+            '2': 'Punjab',
+            '3': 'Sindh',
+            '4': 'KPK',
+            '5': 'Balochistan',
+            '6': 'FATA',
+            '7': 'Gilgit-Baltistan'
+        }
+        return provinces.get(code[0], 'Unknown')
+    
+    def get_gender(self, digit):
+        """Get gender from last digit"""
+        return 'Male' if int(digit) % 2 != 0 else 'Female'
+    
+    @commands.command(name='cnicinfo')
+    async def cnic_info(self, ctx, cnic: str):
+        """Get basic CNIC information without lookup"""
+        
+        clean_cnic = self.validate_cnic(cnic)
+        
+        if not clean_cnic:
+            await ctx.send("```\n❌ Invalid CNIC format!\n```")
+            return
+        
+        formatted = f"{clean_cnic[:5]}-{clean_cnic[5:12]}-{clean_cnic[12]}"
+        
+        info_embed = discord.Embed(
+            title="🆔 CNIC Information",
+            description=f"**CNIC:** `{formatted}`",
+            color=0x00D9FF
+        )
+        
+        info_embed.add_field(
+            name="📍 Province",
+            value=f"`{self.get_province(clean_cnic[:5])}`",
+            inline=True
+        )
+        
+        info_embed.add_field(
+            name="👤 Gender",
+            value=f"`{self.get_gender(clean_cnic[12])}`",
+            inline=True
+        )
+        
+        info_embed.add_field(
+            name="🆔 Sequence",
+            value=f"`{clean_cnic[5:12]}`",
+            inline=True
+        )
+        
+        info_embed.add_field(
+            name="📊 Full Breakdown",
+            value=(
+                f"```\n"
+                f"Province Code : {clean_cnic[:5]}\n"
+                f"Sequence Code : {clean_cnic[5:12]}\n"
+                f"Gender Digit  : {clean_cnic[12]}\n"
+                f"```"
+            ),
+            inline=False
+        )
+        
+        info_embed.set_footer(text="Use !cnic for full database lookup")
+        
+        await ctx.send(embed=info_embed)
+    
+    @commands.command(name='cancellookup')
+    async def cancel_lookup(self, ctx):
+        """Cancel active lookup session"""
+        
+        if ctx.author.id in self.active_lookups:
+            del self.active_lookups[ctx.author.id]
+            await ctx.send("```\n✅ Lookup session cancelled.\n```")
+        else:
+            await ctx.send("```\n❌ No active lookup session.\n```")
+
+
+class LookupButtonView(discord.ui.View):
+    def __init__(self, url, cnic):
+        super().__init__(timeout=300)  # 5 minute timeout
+        self.url = url
+        self.cnic = cnic
+        
+        # Add URL button
+        self.add_item(discord.ui.Button(
+            label="🔗 Open Database Website",
+            url=self.url,
+            style=discord.ButtonStyle.link
+        ))
+        
+        # Add alternative URL
+        self.add_item(discord.ui.Button(
+            label="🔗 Alternative Search",
+            url="https://cnic.pk",
+            style=discord.ButtonStyle.link
+        ))
+    
+    @discord.ui.button(label="📋 Copy CNIC", style=discord.ButtonStyle.primary)
+    async def copy_cnic(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Send CNIC in copyable format"""
+        await interaction.response.send_message(
+            f"**Copy this CNIC:**\n```\n{self.cnic}\n```",
+            ephemeral=True
+        )
+    
+    @discord.ui.button(label="ℹ️ Help", style=discord.ButtonStyle.secondary)
+    async def help_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Show help message"""
+        help_embed = discord.Embed(
+            title="📚 How to Use",
+            description=(
+                "**Steps:**\n"
+                "1. Click 'Open Database Website' button\n"
+                "2. Website opens in new tab\n"
+                f"3. Enter CNIC: `{self.cnic}`\n"
+                "4. Click Search/Submit\n"
+                "5. View results\n\n"
+                "**Tip:** Click 'Copy CNIC' to copy easily!"
+            ),
+            color=0x5865F2
+        )
+        await interaction.response.send_message(embed=help_embed, ephemeral=True)
 
 
 async def setup(bot):
-    await bot.add_cog(CNICLookupSelenium(bot))
+    await bot.add_cog(CNICLookupRailway(bot))
