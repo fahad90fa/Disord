@@ -73,6 +73,7 @@ async def on_ready():
         status=discord.Status.online
     )
 
+
 async def load_cogs():
     cogs = ['cogs.setup', 'cogs.products', 'cogs.tickets', 'cogs.admin', 'cogs.rules', 'welcome.py']
     for cog in cogs:
