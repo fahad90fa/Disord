@@ -4,6 +4,7 @@ from datetime import datetime
 
 BANNER_PATH = "database/banner.jpg"
 BANNER_ATTACHMENT = "attachment://banner.jpg"
+AUTO_JOIN_ROLE_ID = 1490998019603042496
 
 class RulesSystem(commands.Cog):
     def __init__(self, bot):
@@ -608,6 +609,21 @@ class RulesSystem(commands.Cog):
                 await member.send(embed=welcome_embed, file=discord.File(BANNER_PATH, filename="banner.jpg"))
             except:
                 pass  # DMs disabled
+
+    @commands.Cog.listener()
+    async def on_member_join(self, member):
+        """Automatically assign the default join role to new members."""
+        role = member.guild.get_role(AUTO_JOIN_ROLE_ID)
+
+        if role is None:
+            return
+
+        try:
+            await member.add_roles(role, reason="Automatic role assignment on member join")
+        except discord.Forbidden:
+            pass
+        except discord.HTTPException:
+            pass
 
 
 async def setup(bot):
