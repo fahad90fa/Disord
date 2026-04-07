@@ -3,17 +3,6 @@ from discord.ext import commands
 import json
 from datetime import datetime
 import random
-import os
-from dotenv import load_dotenv
-
-load_dotenv()
-
-# ============================================================
-#                    BOT SETUP
-# ============================================================
-
-intents = discord.Intents.all()
-bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 
 # ============================================================
 #                    WELCOME SYSTEM COG
@@ -686,57 +675,5 @@ class WelcomeSystem(commands.Cog):
         if isinstance(error, commands.MissingPermissions):
             await ctx.send("```\n❌ You need Administrator permission to use this command.\n```")
 
-
-# ============================================================
-#                    BOT EVENTS
-# ============================================================
-
-@bot.event
-async def on_ready():
-    print(
-        f"\n"
-        f"╔═══════════════════════════════════════════════╗\n"
-        f"║                                               ║\n"
-        f"║        🤖  ZERODAY TOOL BOT  ONLINE  🤖       ║\n"
-        f"║                                               ║\n"
-        f"╠═══════════════════════════════════════════════╣\n"
-        f"║                                               ║\n"
-        f"║  Bot Name  : {bot.user.name:<31} ║\n"
-        f"║  Bot ID    : {str(bot.user.id):<31} ║\n"
-        f"║  Servers   : {str(len(bot.guilds)):<31} ║\n"
-        f"║                                               ║\n"
-        f"╚═══════════════════════════════════════════════╝\n"
-    )
-
-    await bot.change_presence(
-        activity=discord.Activity(
-            type=discord.ActivityType.watching,
-            name="ZeroDay Tool | !help"
-        ),
-        status=discord.Status.online
-    )
-
-
-@bot.event
-async def on_command_error(ctx, error):
-    if isinstance(error, commands.CommandNotFound):
-        pass
-    elif isinstance(error, commands.MissingPermissions):
-        await ctx.send("```\n❌ You do not have permission to use this command.\n```")
-    elif isinstance(error, commands.MissingRequiredArgument):
-        await ctx.send(f"```\n❌ Missing required argument: {error.param.name}\n```")
-
-
-# ============================================================
-#                    LOAD COGS & RUN
-# ============================================================
-
-async def main():
-    async with bot:
-        await bot.add_cog(WelcomeSystem(bot))
-        await bot.start(os.getenv('DISCORD_TOKEN'))
-
-
-if __name__ == '__main__':
-    import asyncio
-    asyncio.run(main())
+async def setup(bot):
+    await bot.add_cog(WelcomeSystem(bot))
