@@ -1244,7 +1244,16 @@ class AdvancedCommandsPart2(commands.Cog):
             await member.send(embed=dm_embed)
         except:
             pass
-    
+
+    @warn_user.error
+    async def warn_user_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.send("```\n❌ You need Manage Messages permission to use this command.\n```")
+        elif isinstance(error, commands.MissingRequiredArgument):
+            await ctx.send("```\n❌ Missing member!\nUsage: !warn @user [reason]\n```")
+        elif isinstance(error, commands.BadArgument):
+            await ctx.send("```\n❌ Invalid member! Please mention a valid server member.\n```")
+
     @commands.command(name='warnings', aliases=['warns'])
     async def view_warnings(self, ctx, member: Optional[discord.Member] = None):
         """View warnings for user"""
