@@ -514,7 +514,7 @@ class EmbedBuilder:
                 "> `!brightness [@user] <value>` - Adjust brightness (0.1-3.0)\n"
                 "> `!contrast [@user] <value>` - Adjust contrast (0.1-3.0)\n"
                 "> `!rotate [@user] <degrees>` - Rotate image\n"
-                "> `!flip [@user]` - Flip vertically\n"
+                "> `!flipavatar [@user]` - Flip vertically\n"
                 "> `!mirror [@user]` - Mirror horizontally\n"
                 "> `!resize [@user] <w> <h>` - Resize image"
             ),

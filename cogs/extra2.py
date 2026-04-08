@@ -167,7 +167,7 @@ class AdvancedCommandsPart2(commands.Cog):
             
             await ctx.send(embed=embed, file=file)
     
-    @commands.command(name='flip')
+    @commands.command(name='flipavatar', aliases=['vflip'])
     async def flip_avatar(self, ctx, user: Optional[discord.Member] = None):
         """Flip avatar vertically"""
         user = user or ctx.author
