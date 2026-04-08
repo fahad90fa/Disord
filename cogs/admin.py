@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
 from utils.database import db
-from utils.embeds import embeds
+from utils.embeds import EmbedBuilder, HelpView, embeds
 import datetime
 import os
 import platform
@@ -9,6 +9,7 @@ import resource
 import shutil
 import socket
 import sys
+from typing import Optional
 
 OWNER_ID = 1170979888019292261
 
@@ -235,11 +236,51 @@ class Admin(commands.Cog):
         confirmation = await ctx.send(f"✅ Deleted `{max(len(deleted) - 1, 0)}` messages.")
         await confirmation.delete(delay=5)
     
-    @commands.command(name='help')
-    async def help_command(self, ctx):
-        """Display help menu"""
-        help_embed = embeds.help_embed()
-        await ctx.send(embed=help_embed)
+    @commands.command(name='help', aliases=['h', 'commands', 'cmds'])
+    async def help_command(self, ctx, category: Optional[str] = None):
+        """Display help menu with interactive buttons."""
+        if category:
+            category = category.lower()
+            category_map = {
+                'shop': EmbedBuilder.help_shopping,
+                'shopping': EmbedBuilder.help_shopping,
+                'products': EmbedBuilder.help_shopping,
+                'ticket': EmbedBuilder.help_tickets,
+                'tickets': EmbedBuilder.help_tickets,
+                'mod': EmbedBuilder.help_moderation,
+                'moderation': EmbedBuilder.help_moderation,
+                'economy': EmbedBuilder.help_economy,
+                'eco': EmbedBuilder.help_economy,
+                'money': EmbedBuilder.help_economy,
+                'fun': EmbedBuilder.help_fun,
+                'games': EmbedBuilder.help_fun,
+                'image': EmbedBuilder.help_image,
+                'img': EmbedBuilder.help_image,
+                'utility': EmbedBuilder.help_utility,
+                'util': EmbedBuilder.help_utility,
+                'tools': EmbedBuilder.help_utility,
+                'info': EmbedBuilder.help_info,
+                'information': EmbedBuilder.help_info,
+                'admin': EmbedBuilder.help_admin,
+                'settings': EmbedBuilder.help_admin,
+            }
+
+            embed_func = category_map.get(category)
+            if embed_func:
+                await ctx.send(embed=embed_func(), view=HelpView())
+                return
+
+            await ctx.send(
+                "```\n"
+                "❌ Unknown category!\n\n"
+                "Available: shop, tickets, mod, economy, fun,\n"
+                "           image, utility, info, admin\n\n"
+                "Example: !help economy\n"
+                "```"
+            )
+            return
+
+        await ctx.send(embed=embeds.help_embed(), view=HelpView())
 
 async def setup(bot):
     await bot.add_cog(Admin(bot))
