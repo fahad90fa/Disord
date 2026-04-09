@@ -7,7 +7,10 @@ import {
 
 const controlState = new Map();
 const autoplayState = new Map();
+const aiModeState = new Map();
+const vibeState = new Map();
 const lastTrackTitle = new Map();
+const lastTrackAuthor = new Map();
 
 function isTimeoutError(error) {
   const text = String(error?.message || error || "").toLowerCase();
@@ -37,35 +40,97 @@ function progressBar(positionMs, durationMs, size = 16) {
   return `${"█".repeat(filled)}${"░".repeat(empty)}`;
 }
 
+function shorten(text, max = 48) {
+  const value = String(text || "").trim();
+  if (!value) return "Unknown";
+  return value.length > max ? `${value.slice(0, max - 1)}…` : value;
+}
+
+function sourceLabel(source) {
+  const value = normalizeText(source);
+  if (value.includes("soundcloud")) return "SoundCloud";
+  if (value.includes("youtube")) return "YouTube";
+  if (value.includes("spotify")) return "Spotify";
+  return source ? shorten(source, 18) : "Unknown";
+}
+
+function normalizeText(text) {
+  return String(text || "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function buildAiQuery(title, author, vibe) {
+  const base = [title, author].filter(Boolean).join(" ");
+  const vibeTag = vibe ? ` ${vibe} mix` : " mix";
+  return `${base}${vibeTag}`.trim();
+}
+
+async function ensureAiQueue(player, requester, limit = 3) {
+  const title = String(player.queue.current?.title || player.queue.current?.info?.title || lastTrackTitle.get(player.guildId) || "");
+  const author = String(player.queue.current?.info?.author || lastTrackAuthor.get(player.guildId) || "");
+  const vibe = vibeState.get(player.guildId);
+  const query = buildAiQuery(title, author, vibe);
+  if (!query) return;
+
+  const result = await player.search({ query }, requester).catch(() => null);
+  if (!result?.tracks?.length) return;
+
+  const existing = new Set(
+    [player.queue.current, ...(player.queue.tracks || [])]
+      .filter(Boolean)
+      .map((track) => normalizeText(track?.title || track?.info?.title))
+  );
+  const picks = [];
+  for (const track of result.tracks) {
+    const key = normalizeText(track?.title || track?.info?.title);
+    if (!key || existing.has(key)) continue;
+    picks.push(track);
+    if (picks.length >= limit) break;
+  }
+  if (picks.length) {
+    await player.queue.add(picks);
+  }
+}
+
 function buildButtons(player) {
   const autoplayOn = autoplayState.get(player.guildId) === true;
   const loopMode = String(player.repeatMode || "off");
+  const aiOn = aiModeState.get(player.guildId) === true;
   return [
     new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId("music_playpause").setLabel("Play/Pause").setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId("music_skip").setLabel("Skip").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId("music_playpause").setLabel(player.paused ? "Resume" : "Pause").setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId("music_skip").setLabel("Next").setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId("music_stop").setLabel("Stop").setStyle(ButtonStyle.Danger),
-      new ButtonBuilder().setCustomId("music_loop").setLabel(`Loop: ${loopMode}`).setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId("music_loop").setLabel(`Loop ${loopMode}`).setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId("music_shuffle").setLabel("Shuffle").setStyle(ButtonStyle.Secondary)
     ),
     new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId("music_voldown").setLabel("Vol -").setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId("music_volup").setLabel("Vol +").setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId("music_queue").setLabel("Queue").setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId("music_autoplay").setLabel(autoplayOn ? "Autoplay: On" : "Autoplay: Off").setStyle(autoplayOn ? ButtonStyle.Success : ButtonStyle.Secondary)
+      new ButtonBuilder().setCustomId("music_autoplay").setLabel(autoplayOn ? "Autoplay On" : "Autoplay Off").setStyle(autoplayOn ? ButtonStyle.Success : ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId("music_ai").setLabel(aiOn ? "AI On" : "AI Off").setStyle(aiOn ? ButtonStyle.Success : ButtonStyle.Secondary)
     ),
   ];
 }
 
 function buildNowPlayingEmbed(player) {
   const embed = new EmbedBuilder()
-    .setTitle("Music Control Center")
-    .setColor(0x00ff9d)
+    .setColor(0x12d6a3)
     .setTimestamp(new Date());
 
   const track = player.queue.current;
   if (!track) {
-    embed.setDescription("No track is currently playing.");
+    embed
+      .setTitle("ZeroDay Audio Deck")
+      .setDescription(
+        "The player is online but there is nothing live right now.\n\n" +
+        "Use `!play <song>` to start a session and this panel will turn into a live control deck."
+      )
+      .addFields(
+        { name: "State", value: "Idle", inline: true },
+        { name: "Autoplay", value: autoplayState.get(player.guildId) === true ? "On" : "Off", inline: true },
+        { name: "AI Mode", value: aiModeState.get(player.guildId) === true ? "On" : "Off", inline: true }
+      );
     return embed;
   }
 
@@ -76,35 +141,60 @@ function buildNowPlayingEmbed(player) {
   const position = formatDuration(player.position ?? 0);
   const bar = progressBar(player.position ?? 0, track.duration ?? track.info?.duration ?? track.info?.length);
   const autoplayOn = autoplayState.get(player.guildId) === true;
-  const source = String(track.info?.sourceName || "unknown");
+  const aiOn = aiModeState.get(player.guildId) === true;
+  const vibe = vibeState.get(player.guildId) || "default";
+  const source = sourceLabel(track.info?.sourceName || "unknown");
   const artwork = track.info?.artworkUrl || track.info?.thumbnail || null;
+  const author = shorten(track.info?.author || "Unknown Artist", 32);
+  const requester = track.requester?.id ? `<@${track.requester.id}>` : "Unknown";
+  const queueSize = player.queue.tracks?.length || 0;
+  const nextUp = player.queue.tracks?.slice(0, 3) || [];
+  const queuePreview = nextUp.length
+    ? nextUp.map((item, index) => `${index + 1}. ${shorten(item.title || item.info?.title || "Unknown Track", 44)}`).join("\n")
+    : "Queue is clear. Add more tracks to keep the deck moving.";
+  const statusLine = [
+    player.paused ? "Paused" : "Live",
+    `Vol ${volume}`,
+    `Loop ${loopMode}`,
+    autoplayOn ? "Autoplay" : "Manual",
+    aiOn ? "AI Active" : "AI Standby",
+  ].join(" | ");
 
-  embed.addFields(
-    { name: "Now Playing", value: title, inline: false },
-    { name: "Progress", value: `${position} / ${duration}\n${bar}`, inline: false },
-    { name: "Volume", value: volume, inline: true },
-    { name: "Loop", value: loopMode, inline: true },
-    { name: "Autoplay", value: autoplayOn ? "On" : "Off", inline: true },
-    { name: "Source", value: source, inline: true }
-  );
+  embed
+    .setTitle("ZeroDay Audio Deck")
+    .setDescription(
+      `**${shorten(title, 96)}**\n` +
+      `${author}\n\n` +
+      `\`${statusLine}\``
+    )
+    .addFields(
+      { name: "Timeline", value: `\`${position}\` ${bar} \`${duration}\``, inline: false },
+      { name: "Up Next", value: queuePreview, inline: false },
+      { name: "Requester", value: requester, inline: true },
+      { name: "Source", value: source, inline: true },
+      { name: "Queued", value: `${queueSize}`, inline: true },
+      { name: "Vibe Engine", value: shorten(vibe, 24), inline: true },
+      { name: "Node Volume", value: volume, inline: true },
+      { name: "Session Mode", value: aiOn ? "AI radio" : autoplayOn ? "Autoplay" : "Manual queue", inline: true }
+    );
 
-  if (track.requester?.id) {
-    embed.addFields({ name: "Requested By", value: `<@${track.requester.id}>`, inline: true });
-  }
   if (track.uri) {
-    embed.addFields({ name: "Link", value: track.uri, inline: false });
+    embed.addFields({ name: "Direct Link", value: track.uri, inline: false });
   }
   if (artwork) {
-    embed.setThumbnail(artwork);
+    embed.setThumbnail(artwork).setImage(artwork);
   }
+  embed.setFooter({ text: "ZeroDay Music System" });
   return embed;
 }
 
 async function updateControlMessage(player) {
+  const discordClient = player?.LavalinkManager?.discordClient;
+  if (!player || !discordClient) return;
   const info = controlState.get(player.guildId);
   if (!info) return;
   const { channelId, messageId } = info;
-  const channel = player.manager.client.channels.cache.get(channelId);
+  const channel = discordClient.channels.cache.get(channelId);
   if (!channel) return;
   const message = await channel.messages.fetch(messageId).catch(() => null);
   if (!message) return;
@@ -139,6 +229,10 @@ export const command = {
     "nodes",
     "autoplay",
     "ap",
+    "aimode",
+    "ai",
+    "vibe",
+    "suggest",
   ],
   async execute({ message, args, config }) {
     const client = message.client;
@@ -406,6 +500,43 @@ export const command = {
       autoplayState.set(message.guild.id, !current);
       await updateControlMessage(player);
       await message.channel.send(`✅ Autoplay ${!current ? "enabled" : "disabled"}.`);
+      return;
+    }
+
+    if (cmd === "aimode" || cmd === "ai") {
+      const current = aiModeState.get(message.guild.id) === true;
+      aiModeState.set(message.guild.id, !current);
+      await updateControlMessage(player);
+      await message.channel.send(`✅ AI Mode ${!current ? "enabled" : "disabled"}.`);
+      return;
+    }
+
+    if (cmd === "vibe") {
+      const vibe = args.join(" ").trim();
+      if (!vibe) {
+        await message.channel.send("```\n❌ Usage: !vibe <mood|genre|theme>\n```");
+        return;
+      }
+      vibeState.set(message.guild.id, vibe.slice(0, 60));
+      await updateControlMessage(player);
+      await message.channel.send(`✅ Vibe set to: ${vibe}`);
+      return;
+    }
+
+    if (cmd === "suggest") {
+      const prompt = args.join(" ").trim();
+      if (!prompt) {
+        await message.channel.send("```\n❌ Usage: !suggest <prompt>\n```");
+        return;
+      }
+      const res = await player.search({ query: prompt }, message.author).catch(() => null);
+      if (!res?.tracks?.length) {
+        await message.channel.send("```\n❌ No suggestions found.\n```");
+        return;
+      }
+      const lines = res.tracks.slice(0, 5).map((track, i) => `${i + 1}. ${track.title}`);
+      await message.channel.send("```\n" + lines.join("\n") + "\n```");
+      return;
     }
   },
 };
@@ -418,6 +549,9 @@ export async function register(client) {
     if (player.queue.current?.title || player.queue.current?.info?.title) {
       lastTrackTitle.set(player.guildId, String(player.queue.current?.title || player.queue.current?.info?.title));
     }
+    if (player.queue.current?.info?.author) {
+      lastTrackAuthor.set(player.guildId, String(player.queue.current?.info?.author));
+    }
     await updateControlMessage(player);
   });
 
@@ -426,19 +560,15 @@ export async function register(client) {
   });
 
   manager.on("queueEnd", async (player) => {
-    if (autoplayState.get(player.guildId) === true) {
-      const query = lastTrackTitle.get(player.guildId);
-      if (query) {
-        try {
-          const result = await player.search({ query }, player.queue.current?.requester ?? null);
-          if (result?.tracks?.length) {
-            await player.queue.add(result.tracks[0]);
-            if (!player.playing && !player.paused) {
-              await player.play();
-            }
-          }
-        } catch {
-        }
+    if (aiModeState.get(player.guildId) === true) {
+      await ensureAiQueue(player, player.queue.current?.requester ?? null, 3);
+      if (!player.playing && !player.paused && player.queue.tracks?.length) {
+        await player.play();
+      }
+    } else if (autoplayState.get(player.guildId) === true) {
+      await ensureAiQueue(player, player.queue.current?.requester ?? null, 1);
+      if (!player.playing && !player.paused && player.queue.tracks?.length) {
+        await player.play();
       }
     }
     await updateControlMessage(player);
@@ -456,12 +586,12 @@ export async function handleInteraction({ client, interaction }) {
 
   const player = client.lavalink?.getPlayer(interaction.guildId);
   if (!player) {
-    await interaction.reply({ content: "```\n❌ Music player is not active.\n```", ephemeral: true });
+    await interaction.reply({ content: "```\n❌ Music player is not active.\n```", flags: 64 });
     return true;
   }
 
   if (interaction.member?.voice?.channelId !== player.voiceChannelId) {
-    await interaction.reply({ content: "```\n❌ Join the same voice channel as the bot.\n```", ephemeral: true });
+    await interaction.reply({ content: "```\n❌ Join the same voice channel as the bot.\n```", flags: 64 });
     return true;
   }
 
@@ -473,7 +603,7 @@ export async function handleInteraction({ client, interaction }) {
     if (current) lines.push(`Now: ${current.title}`);
     tracks.slice(0, 10).forEach((track, index) => lines.push(`${index + 1}. ${track.title}`));
     if (tracks.length > 10) lines.push(`...and ${tracks.length - 10} more`);
-    await interaction.reply({ content: "```\n" + (lines.join("\n") || "Queue is empty.") + "\n```", ephemeral: true });
+    await interaction.reply({ content: "```\n" + (lines.join("\n") || "Queue is empty.") + "\n```", flags: 64 });
     return true;
   }
 
@@ -495,6 +625,9 @@ export async function handleInteraction({ client, interaction }) {
   } else if (action === "music_autoplay") {
     const current = autoplayState.get(interaction.guildId) === true;
     autoplayState.set(interaction.guildId, !current);
+  } else if (action === "music_ai") {
+    const current = aiModeState.get(interaction.guildId) === true;
+    aiModeState.set(interaction.guildId, !current);
   } else if (action === "music_voldown") {
     await player.setVolume(Math.max(0, player.volume - 10));
   } else if (action === "music_volup") {

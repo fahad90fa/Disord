@@ -108,6 +108,7 @@ export async function setupLavalink(client, config) {
   });
 
   client.lavalink = manager;
+  manager.discordClient = client;
 
   // Prevent process crash when any public node emits runtime errors (429/timeout/etc.).
   manager.nodeManager.on("error", (node, error) => {
