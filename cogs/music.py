@@ -218,6 +218,21 @@ class Music(commands.Cog):
             await ctx.send("```\n❌ You need to join a voice channel first.\n```")
             return None
 
+        # Permission precheck
+        channel = ctx.author.voice.channel
+        me = ctx.guild.me
+        if me:
+            perms = channel.permissions_for(me)
+            if not perms.connect:
+                await ctx.send("```\n❌ I don't have Connect permission in that channel.\n```")
+                return None
+            if not perms.speak:
+                await ctx.send("```\n❌ I don't have Speak permission in that channel.\n```")
+                return None
+            if isinstance(channel, discord.StageChannel) and not perms.request_to_speak:
+                await ctx.send("```\n❌ I need Request to Speak permission in that stage channel.\n```")
+                return None
+
         player = ctx.voice_client
         if not player:
             try:
