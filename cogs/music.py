@@ -221,7 +221,11 @@ class Music(commands.Cog):
         player = ctx.voice_client
         if not player:
             try:
-                player = await ctx.author.voice.channel.connect(cls=wavelink.Player)
+                player = await ctx.author.voice.channel.connect(
+                    cls=wavelink.Player,
+                    timeout=30,
+                    reconnect=True,
+                )
             except wavelink.InvalidChannelStateException:
                 await ctx.send("```\n❌ I can't join that channel (permissions or invalid state).\n```")
                 return None
