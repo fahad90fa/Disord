@@ -6,6 +6,8 @@ import {
 } from "discord.js";
 
 const controlState = new Map();
+const autoplayState = new Map();
+const lastTrackTitle = new Map();
 
 function isTimeoutError(error) {
   const text = String(error?.message || error || "").toLowerCase();
@@ -21,19 +23,36 @@ function formatDuration(ms) {
   return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
 }
 
-function buildButtons() {
+function clamp(num, min, max) {
+  return Math.max(min, Math.min(max, num));
+}
+
+function progressBar(positionMs, durationMs, size = 16) {
+  if (!Number.isFinite(positionMs) || !Number.isFinite(durationMs) || durationMs <= 0) {
+    return "───────────────";
+  }
+  const ratio = clamp(positionMs / durationMs, 0, 1);
+  const filled = Math.round(ratio * size);
+  const empty = Math.max(0, size - filled);
+  return `${"█".repeat(filled)}${"░".repeat(empty)}`;
+}
+
+function buildButtons(player) {
+  const autoplayOn = autoplayState.get(player.guildId) === true;
+  const loopMode = String(player.repeatMode || "off");
   return [
     new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId("music_playpause").setLabel("Play/Pause").setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId("music_skip").setLabel("Skip").setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId("music_stop").setLabel("Stop").setStyle(ButtonStyle.Danger),
-      new ButtonBuilder().setCustomId("music_loop").setLabel("Loop").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId("music_loop").setLabel(`Loop: ${loopMode}`).setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId("music_shuffle").setLabel("Shuffle").setStyle(ButtonStyle.Secondary)
     ),
     new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId("music_voldown").setLabel("Vol -").setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId("music_volup").setLabel("Vol +").setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId("music_queue").setLabel("Queue").setStyle(ButtonStyle.Secondary)
+      new ButtonBuilder().setCustomId("music_queue").setLabel("Queue").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId("music_autoplay").setLabel(autoplayOn ? "Autoplay: On" : "Autoplay: Off").setStyle(autoplayOn ? ButtonStyle.Success : ButtonStyle.Secondary)
     ),
   ];
 }
@@ -54,12 +73,19 @@ function buildNowPlayingEmbed(player) {
   const duration = formatDuration(track.duration ?? track.info?.duration ?? track.info?.length);
   const volume = Number.isFinite(player.volume) ? `${player.volume}%` : "Unknown";
   const loopMode = String(player.repeatMode || "off");
+  const position = formatDuration(player.position ?? 0);
+  const bar = progressBar(player.position ?? 0, track.duration ?? track.info?.duration ?? track.info?.length);
+  const autoplayOn = autoplayState.get(player.guildId) === true;
+  const source = String(track.info?.sourceName || "unknown");
+  const artwork = track.info?.artworkUrl || track.info?.thumbnail || null;
 
   embed.addFields(
     { name: "Now Playing", value: title, inline: false },
-    { name: "Duration", value: duration, inline: true },
+    { name: "Progress", value: `${position} / ${duration}\n${bar}`, inline: false },
     { name: "Volume", value: volume, inline: true },
-    { name: "Loop", value: loopMode, inline: true }
+    { name: "Loop", value: loopMode, inline: true },
+    { name: "Autoplay", value: autoplayOn ? "On" : "Off", inline: true },
+    { name: "Source", value: source, inline: true }
   );
 
   if (track.requester?.id) {
@@ -67,6 +93,9 @@ function buildNowPlayingEmbed(player) {
   }
   if (track.uri) {
     embed.addFields({ name: "Link", value: track.uri, inline: false });
+  }
+  if (artwork) {
+    embed.setThumbnail(artwork);
   }
   return embed;
 }
@@ -79,7 +108,7 @@ async function updateControlMessage(player) {
   if (!channel) return;
   const message = await channel.messages.fetch(messageId).catch(() => null);
   if (!message) return;
-  await message.edit({ embeds: [buildNowPlayingEmbed(player)], components: buildButtons() }).catch(() => {});
+  await message.edit({ embeds: [buildNowPlayingEmbed(player)], components: buildButtons(player) }).catch(() => {});
 }
 
 export const command = {
@@ -108,6 +137,8 @@ export const command = {
     "remove",
     "move",
     "nodes",
+    "autoplay",
+    "ap",
   ],
   async execute({ message, args, config }) {
     const client = message.client;
@@ -221,7 +252,7 @@ export const command = {
       if (!controlState.has(message.guild.id)) {
         const msg = await message.channel.send({
           embeds: [buildNowPlayingEmbed(player)],
-          components: buildButtons(),
+          components: buildButtons(player),
         });
         controlState.set(message.guild.id, { channelId: msg.channel.id, messageId: msg.id });
       }
@@ -367,6 +398,14 @@ export const command = {
       }
       const lines = nodes.map((n) => `${n.options.id} | ${n.options.host}:${n.options.port} | connected=${n.connected}`);
       await message.channel.send("```\n" + lines.join("\n") + "\n```");
+      return;
+    }
+
+    if (cmd === "autoplay" || cmd === "ap") {
+      const current = autoplayState.get(message.guild.id) === true;
+      autoplayState.set(message.guild.id, !current);
+      await updateControlMessage(player);
+      await message.channel.send(`✅ Autoplay ${!current ? "enabled" : "disabled"}.`);
     }
   },
 };
@@ -376,6 +415,9 @@ export async function register(client) {
   if (!manager) return;
 
   manager.on("trackStart", async (player) => {
+    if (player.queue.current?.title || player.queue.current?.info?.title) {
+      lastTrackTitle.set(player.guildId, String(player.queue.current?.title || player.queue.current?.info?.title));
+    }
     await updateControlMessage(player);
   });
 
@@ -384,6 +426,21 @@ export async function register(client) {
   });
 
   manager.on("queueEnd", async (player) => {
+    if (autoplayState.get(player.guildId) === true) {
+      const query = lastTrackTitle.get(player.guildId);
+      if (query) {
+        try {
+          const result = await player.search({ query }, player.queue.current?.requester ?? null);
+          if (result?.tracks?.length) {
+            await player.queue.add(result.tracks[0]);
+            if (!player.playing && !player.paused) {
+              await player.play();
+            }
+          }
+        } catch {
+        }
+      }
+    }
     await updateControlMessage(player);
   });
 
@@ -435,6 +492,9 @@ export async function handleInteraction({ client, interaction }) {
     await player.setRepeatMode(next);
   } else if (action === "music_shuffle") {
     await player.queue.shuffle();
+  } else if (action === "music_autoplay") {
+    const current = autoplayState.get(interaction.guildId) === true;
+    autoplayState.set(interaction.guildId, !current);
   } else if (action === "music_voldown") {
     await player.setVolume(Math.max(0, player.volume - 10));
   } else if (action === "music_volup") {
