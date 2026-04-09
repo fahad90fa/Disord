@@ -5,4 +5,4 @@ yarl==1.15.2
 Pillow==10.4.0
 qrcode==8.2
 audioop-lts; python_version >= "3.13"
-wavelink==2.6.4
+wavelink>=3.0.0
