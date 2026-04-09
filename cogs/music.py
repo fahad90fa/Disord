@@ -45,10 +45,10 @@ class MusicControlView(discord.ui.View):
         if not player:
             return
         await self._safe_defer(interaction)
-        if player.is_paused():
-            await player.resume()
+        if player.paused:
+            await player.pause(False)
         else:
-            await player.pause()
+            await player.pause(True)
         await self.cog._refresh_now_playing_message(player.guild)
 
     @discord.ui.button(label="Skip", style=discord.ButtonStyle.secondary, custom_id="music_skip")
@@ -57,7 +57,7 @@ class MusicControlView(discord.ui.View):
         if not player:
             return
         await self._safe_defer(interaction)
-        await player.stop()
+        await player.skip()
 
     @discord.ui.button(label="Stop", style=discord.ButtonStyle.danger, custom_id="music_stop")
     async def stop(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -66,7 +66,7 @@ class MusicControlView(discord.ui.View):
             return
         await self._safe_defer(interaction)
         self.cog._get_queue(player.guild.id).clear()
-        await player.stop()
+        await player.skip()
         await self.cog._refresh_now_playing_message(player.guild)
 
     @discord.ui.button(label="Loop", style=discord.ButtonStyle.secondary, custom_id="music_loop")
@@ -135,11 +135,11 @@ class MusicControlView(discord.ui.View):
 class Music(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.queues: Dict[int, Deque[wavelink.Track]] = {}
+        self.queues: Dict[int, Deque[wavelink.Playable]] = {}
         self.loop_mode: Dict[int, str] = {}
         self.control_messages: Dict[int, Tuple[int, int]] = {}
 
-    def _get_queue(self, guild_id: int) -> Deque[wavelink.Track]:
+    def _get_queue(self, guild_id: int) -> Deque[wavelink.Playable]:
         return self.queues.setdefault(guild_id, deque())
 
     def _get_loop_mode(self, guild_id: int) -> str:
@@ -196,17 +196,20 @@ class Music(commands.Cog):
         }]
 
     async def _ensure_node(self) -> None:
-        if wavelink.NodePool.nodes:
+        if wavelink.Pool.nodes:
             return
+        nodes = []
         for node_cfg in self._node_configs():
-            await wavelink.NodePool.create_node(
-                bot=self.bot,
-                host=node_cfg["host"],
-                port=node_cfg["port"],
-                password=node_cfg["password"],
-                https=node_cfg["https"],
-                identifier=node_cfg.get("identifier"),
+            scheme = "https" if node_cfg.get("https") else "http"
+            uri = f"{scheme}://{node_cfg['host']}:{node_cfg['port']}"
+            nodes.append(
+                wavelink.Node(
+                    uri=uri,
+                    password=node_cfg["password"],
+                    identifier=node_cfg.get("identifier"),
+                )
             )
+        await wavelink.Pool.connect(nodes=nodes, client=self.bot)
 
     async def _get_player(self, ctx: commands.Context) -> Optional[wavelink.Player]:
         if not ctx.author.voice or not ctx.author.voice.channel:
@@ -219,11 +222,12 @@ class Music(commands.Cog):
         elif player.channel != ctx.author.voice.channel:
             await ctx.send("```\n❌ You must be in the same voice channel as the bot.\n```")
             return None
+        player.autoplay = wavelink.AutoPlayMode.disabled
         player.text_channel = ctx.channel
         return player
 
     async def _start_next(self, player: wavelink.Player) -> None:
-        if player.is_playing():
+        if player.playing:
             return
         queue = self._get_queue(player.guild.id)
         if not queue:
@@ -310,16 +314,18 @@ class Music(commands.Cog):
         await self._ensure_node()
 
     @commands.Cog.listener()
-    async def on_wavelink_node_ready(self, node: wavelink.Node):
-        await self._log(f"Lavalink node ready: {node.identifier}")
+    async def on_wavelink_node_ready(self, payload: wavelink.NodeReadyEventPayload):
+        await self._log(f"Lavalink node ready: {payload.node.identifier}")
 
     @commands.Cog.listener()
-    async def on_wavelink_node_disconnected(self, node: wavelink.Node):
-        await self._log(f"Lavalink node disconnected: {node.identifier}")
+    async def on_wavelink_node_closed(self, node: wavelink.Node, disconnected: list[wavelink.Player]):
+        await self._log(f"Lavalink node closed: {node.identifier} | disconnected={len(disconnected)}")
 
     @commands.Cog.listener()
-    async def on_wavelink_node_error(self, node: wavelink.Node, error: Exception):
-        await self._log(f"Lavalink node error: {node.identifier} | {error}")
+    async def on_wavelink_track_exception(self, payload: wavelink.TrackExceptionEventPayload):
+        player = payload.player
+        guild_id = player.guild.id if player and player.guild else "unknown"
+        await self._log(f"Lavalink track exception | guild={guild_id} | {payload.exception}")
 
     @commands.Cog.listener()
     async def on_wavelink_track_end(self, payload: wavelink.TrackEndEventPayload):
@@ -327,17 +333,20 @@ class Music(commands.Cog):
         guild_id = player.guild.id
         mode = self._get_loop_mode(guild_id)
 
-        if mode == "track" and payload.track:
-            await player.play(payload.track)
+        original = payload.original or payload.track
+        if mode == "track" and original:
+            await player.play(original)
             return
-        if mode == "queue" and payload.track:
-            self._get_queue(guild_id).append(payload.track)
+        if mode == "queue" and original:
+            self._get_queue(guild_id).append(original)
 
         await self._start_next(player)
 
     @commands.Cog.listener()
     async def on_wavelink_track_start(self, payload: wavelink.TrackStartEventPayload):
         player = payload.player
+        if not player:
+            return
         guild = player.guild
         embed = self._build_now_playing_embed(guild)
         view = MusicControlView(self, guild.id)
@@ -388,7 +397,7 @@ class Music(commands.Cog):
         if not player:
             return
 
-        results = await wavelink.YouTubeTrack.search(query)
+        results = await wavelink.Playable.search(query)
         if not results:
             await ctx.send("```\n❌ No results found.\n```")
             return
@@ -407,7 +416,7 @@ class Music(commands.Cog):
         track.extras = {"requester": ctx.author.id}
         queue.append(track)
 
-        if not player.is_playing():
+        if not player.playing:
             await self._start_next(player)
             await ctx.send(f"```\n▶️ Now playing: {track.title}\n```")
         else:
@@ -417,20 +426,20 @@ class Music(commands.Cog):
     async def pause(self, ctx: commands.Context):
         """Pause playback."""
         player = ctx.voice_client
-        if not player or not player.is_playing():
+        if not player or not player.playing:
             await ctx.send("```\n❌ Nothing is playing.\n```")
             return
-        await player.pause()
+        await player.pause(True)
         await ctx.send("```\n⏸️ Paused.\n```")
 
     @commands.command(name="resume")
     async def resume(self, ctx: commands.Context):
         """Resume playback."""
         player = ctx.voice_client
-        if not player or not player.is_paused():
+        if not player or not player.paused:
             await ctx.send("```\n❌ Nothing is paused.\n```")
             return
-        await player.resume()
+        await player.pause(False)
         await ctx.send("```\n▶️ Resumed.\n```")
 
     @commands.command(name="stop")
@@ -441,17 +450,17 @@ class Music(commands.Cog):
             await ctx.send("```\n❌ Nothing is playing.\n```")
             return
         self._get_queue(ctx.guild.id).clear()
-        await player.stop()
+        await player.skip()
         await ctx.send("```\n⏹️ Stopped and cleared the queue.\n```")
 
     @commands.command(name="skip", aliases=["next"])
     async def skip(self, ctx: commands.Context):
         """Skip the current track."""
         player = ctx.voice_client
-        if not player or not player.is_playing():
+        if not player or not player.playing:
             await ctx.send("```\n❌ Nothing is playing.\n```")
             return
-        await player.stop()
+        await player.skip()
         await ctx.send("```\n⏭️ Skipped.\n```")
 
     @commands.command(name="nowplaying", aliases=["np"])
