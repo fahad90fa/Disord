@@ -218,7 +218,17 @@ class Music(commands.Cog):
 
         player = ctx.voice_client
         if not player:
-            player = await ctx.author.voice.channel.connect(cls=wavelink.Player)
+            try:
+                player = await ctx.author.voice.channel.connect(cls=wavelink.Player)
+            except wavelink.InvalidChannelStateException:
+                await ctx.send("```\n❌ I can't join that channel (permissions or invalid state).\n```")
+                return None
+            except wavelink.ChannelTimeoutException:
+                await ctx.send("```\n❌ Timed out while connecting to voice.\n```")
+                return None
+            except Exception as e:
+                await ctx.send(f"```\n❌ Failed to connect: {e}\n```")
+                return None
         elif player.channel != ctx.author.voice.channel:
             await ctx.send("```\n❌ You must be in the same voice channel as the bot.\n```")
             return None
@@ -607,6 +617,25 @@ class Music(commands.Cog):
                 f"{node.identifier} | {node.host}:{node.port} | players={players} playing={playing} uptime={uptime_text}"
             )
         await ctx.send("```\n" + "\n".join(lines) + "\n```")
+
+    async def cog_command_error(self, ctx, error):
+        if isinstance(error, commands.MissingRequiredArgument):
+            await ctx.send(
+                "```\n"
+                f"❌ Missing argument: {error.param.name}\n"
+                f"Usage: !{ctx.command.qualified_name} {ctx.command.signature}\n"
+                "```"
+            )
+            return
+        if isinstance(error, commands.BadArgument):
+            await ctx.send(
+                "```\n"
+                "❌ Invalid argument provided.\n"
+                f"Usage: !{ctx.command.qualified_name} {ctx.command.signature}\n"
+                "```"
+            )
+            return
+        raise error
 
 
 async def setup(bot: commands.Bot):
