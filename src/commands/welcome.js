@@ -2,6 +2,7 @@ import { EmbedBuilder, PermissionsBitField } from "discord.js";
 import { saveConfig } from "../config.js";
 
 const VALID_STYLES = ["main", "compact", "hacker", "matrix", "minimal", "cyberpunk", "line"];
+const AUTO_JOIN_ROLE_ID = "1490998019603042496";
 
 function resolveWelcomeStyle(style) {
   if (!style || style === "line") return "main";
@@ -147,7 +148,14 @@ export async function register(client, config) {
   client.welcomeListenerReady = true;
 
   client.on("guildMemberAdd", async (member) => {
-    if (member.user.bot || !config.welcome_channel) return;
+    if (member.user.bot) return;
+
+    const autoRole = member.guild.roles.cache.get(AUTO_JOIN_ROLE_ID);
+    if (autoRole) {
+      await member.roles.add(autoRole).catch(() => {});
+    }
+
+    if (!config.welcome_channel) return;
     const channel = member.guild.channels.cache.get(String(config.welcome_channel));
     if (!channel?.isTextBased()) return;
     await sendWelcome(channel, member, resolveWelcomeStyle(config.welcome_style));
