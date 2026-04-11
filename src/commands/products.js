@@ -31,9 +31,33 @@ export const command = {
     }
 
     if (cmd === "product") {
+      if ((args[0] || "").toLowerCase() === "list" || (args[0] || "").toLowerCase() === "all") {
+        const products = db.getProducts();
+        const embed = new EmbedBuilder()
+          .setTitle("🛒 All Products")
+          .setDescription(`Total products: ${products.length}`)
+          .setColor(0x00ff9d)
+          .setTimestamp(new Date());
+
+        if (!products.length) {
+          embed.addFields({ name: "📭 No Products", value: "There are no products in the bot right now." });
+        } else {
+          for (const product of products.slice(0, 25)) {
+            embed.addFields({
+              name: `${product.id}. ${product.name}`,
+              value: `💰 $${product.price}\n📦 ${product.category || "Unknown"}\n📝 ${product.description.slice(0, 80)}${product.description.length > 80 ? "..." : ""}`,
+              inline: false,
+            });
+          }
+        }
+
+        await message.channel.send({ embeds: [embed] });
+        return;
+      }
+
       const productId = Number(args[0]);
       if (!productId) {
-        await message.channel.send("```\n❌ Usage: !product <id>\n```");
+        await message.channel.send("```\n❌ Usage: !product <id>\nTip: use !product list to view all products.\n```");
         return;
       }
       const product = db.getProductById(productId);

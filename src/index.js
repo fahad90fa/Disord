@@ -83,4 +83,31 @@ if (!token) {
   throw new Error("DISCORD_TOKEN is not set.");
 }
 
+process.on("unhandledRejection", (error) => {
+  console.error("Unhandled promise rejection:", error);
+});
+
+process.on("uncaughtException", (error) => {
+  console.error("Uncaught exception:", error);
+});
+
+async function shutdown(signal) {
+  console.warn(`Received ${signal}, shutting down bot gracefully...`);
+  try {
+    await client.destroy();
+  } catch (error) {
+    console.error("Error while destroying client:", error);
+  } finally {
+    process.exit(0);
+  }
+}
+
+process.on("SIGTERM", () => {
+  shutdown("SIGTERM");
+});
+
+process.on("SIGINT", () => {
+  shutdown("SIGINT");
+});
+
 client.login(token);
