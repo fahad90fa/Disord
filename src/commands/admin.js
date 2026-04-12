@@ -1,8 +1,10 @@
 import { EmbedBuilder, PermissionsBitField } from "discord.js";
 import os from "node:os";
 import { db } from "../db.js";
+import { getGiveawaysData, saveGiveawaysData } from "../state.js";
 
 const giveaways = new Map();
+const giveawayTimeouts = new Map();
 const RIGGED_USER_ID = "786490217695150101"; // 🎯 Special user who always wins
 
 function parseDuration(input) {
@@ -52,10 +54,128 @@ function pickRiggedWinners(participants, count) {
   return winners;
 }
 
+function loadGiveawaysCache() {
+  const data = getGiveawaysData();
+  const active = data?.active && typeof data.active === "object" ? data.active : {};
+  for (const [messageId, entry] of Object.entries(active)) {
+    giveaways.set(messageId, entry);
+  }
+  return data;
+}
+
+function persistGiveaways() {
+  const data = getGiveawaysData();
+  data.active = Object.fromEntries(giveaways.entries());
+  if (!Array.isArray(data.history)) data.history = [];
+  saveGiveawaysData(data);
+}
+
+function recordGiveawayHistory(entry, winners) {
+  const data = getGiveawaysData();
+  if (!Array.isArray(data.history)) data.history = [];
+  data.history.push({
+    ...entry,
+    winners: winners.map((winner) => winner.id),
+    endedAt: new Date().toISOString(),
+  });
+  saveGiveawaysData(data);
+}
+
+function getGiveawayEntry(messageId) {
+  const active = giveaways.get(messageId);
+  if (active) return active;
+  const data = getGiveawaysData();
+  if (Array.isArray(data.history)) {
+    return data.history.find((entry) => entry.messageId === messageId) ?? null;
+  }
+  return null;
+}
+
+function scheduleGiveaway(client, messageId, entry) {
+  if (giveawayTimeouts.has(messageId)) return;
+  const delay = Math.max(0, entry.endsAt - Date.now());
+  const timeout = setTimeout(() => {
+    endGiveaway(client, messageId).catch((error) => {
+      console.error("Giveaway error:", error);
+    });
+  }, delay);
+  giveawayTimeouts.set(messageId, timeout);
+}
+
+async function endGiveaway(client, messageId) {
+  const entry = giveaways.get(messageId);
+  if (!entry) return;
+  const timeout = giveawayTimeouts.get(messageId);
+  if (timeout) {
+    clearTimeout(timeout);
+    giveawayTimeouts.delete(messageId);
+  }
+
+  const channel = await client.channels.fetch(entry.channelId).catch(() => null);
+  if (!channel || !channel.isTextBased()) {
+    giveaways.delete(messageId);
+    persistGiveaways();
+    return;
+  }
+
+  const fetchedMsg = await channel.messages.fetch(messageId).catch(() => null);
+  if (!fetchedMsg) {
+    giveaways.delete(messageId);
+    persistGiveaways();
+    return;
+  }
+
+  const reaction = fetchedMsg.reactions.cache.get("🎉") || (await fetchedMsg.reactions.fetch("🎉").catch(() => null));
+  const users = reaction ? await reaction.users.fetch() : null;
+  const participants = users ? users.filter((user) => !user.bot) : new Map();
+
+  const host = await client.users.fetch(entry.hostId).catch(() => null);
+  const hostTag = host?.tag ?? `User ${entry.hostId}`;
+  const hostAvatar = host?.displayAvatarURL();
+
+  if (!participants.size) {
+    const noWinnerEmbed = new EmbedBuilder()
+      .setTitle("🎉 GIVEAWAY ENDED 🎉")
+      .setColor(0xff0000)
+      .setDescription(`**Prize:** ${entry.prize}\n**Winner:** No valid entries!`)
+      .setFooter({ text: `Hosted by ${hostTag}`, iconURL: hostAvatar });
+    await fetchedMsg.edit({ embeds: [noWinnerEmbed] }).catch(() => {});
+    await channel.send("No valid giveaway entries were found.").catch(() => {});
+    giveaways.delete(messageId);
+    persistGiveaways();
+    recordGiveawayHistory(entry, []);
+    return;
+  }
+
+  const winners = pickRiggedWinners(participants, entry.winnerCount);
+  const winnerMentions = winners.map((winner) => `<@${winner.id}>`).join(", ");
+  const winnerEmbed = new EmbedBuilder()
+    .setTitle("🎉 GIVEAWAY ENDED 🎉")
+    .setColor(0x00ff66)
+    .setDescription(`**Prize:** ${entry.prize}\n**Winner(s):** ${winnerMentions}`)
+    .setFooter({ text: `Hosted by ${hostTag}`, iconURL: hostAvatar });
+
+  await fetchedMsg.edit({ embeds: [winnerEmbed] }).catch(() => {});
+  await channel.send(`🎉 Congratulations ${winnerMentions}! You won **${entry.prize}**!`).catch(() => {});
+
+  giveaways.delete(messageId);
+  persistGiveaways();
+  recordGiveawayHistory(entry, winners);
+}
+
+export async function register(client) {
+  if (giveaways.size === 0) {
+    loadGiveawaysCache();
+  }
+  for (const [messageId, entry] of giveaways.entries()) {
+    scheduleGiveaway(client, messageId, entry);
+  }
+}
+
 export const command = {
   name: "setstatus",
   aliases: ["stats", "ping", "ownerpurge", "opurge", "giveaway"],
-  async execute({ message, args, config }) {
+  async execute({ client, message, args, config }) {
     const cmd = message.content.slice(config.prefix.length).trim().split(/\s+/)[0].toLowerCase();
 
     // ========== SETSTATUS COMMAND ==========
@@ -139,6 +259,54 @@ export const command = {
         return;
       }
 
+      if ((args[0] || "").toLowerCase() === "reroll") {
+        const messageId = args[1];
+        if (!messageId) {
+          await message.channel.send(`\`\`\`\n❌ Usage: ${config.prefix}giveaway reroll <message_id>\n\`\`\``);
+          return;
+        }
+
+        const entry = getGiveawayEntry(messageId);
+        if (!entry) {
+          await message.channel.send("```\n❌ Giveaway not found in history or active list.\n```");
+          return;
+        }
+
+        const channel = await client.channels.fetch(entry.channelId).catch(() => null);
+        if (!channel || !channel.isTextBased()) {
+          await message.channel.send("```\n❌ Giveaway channel no longer exists.\n```");
+          return;
+        }
+
+        const fetchedMsg = await channel.messages.fetch(messageId).catch(() => null);
+        if (!fetchedMsg) {
+          await message.channel.send("```\n❌ Giveaway message not found.\n```");
+          return;
+        }
+
+        const reaction = fetchedMsg.reactions.cache.get("🎉") || (await fetchedMsg.reactions.fetch("🎉").catch(() => null));
+        const users = reaction ? await reaction.users.fetch() : null;
+        const participants = users ? users.filter((user) => !user.bot) : new Map();
+
+        if (!participants.size) {
+          await message.channel.send("```\n❌ No valid participants to reroll.\n```");
+          return;
+        }
+
+        const winners = pickRiggedWinners(participants, entry.winnerCount);
+        const winnerMentions = winners.map((winner) => `<@${winner.id}>`).join(", ");
+
+        const rerollEmbed = new EmbedBuilder()
+          .setTitle("🎉 GIVEAWAY REROLLED 🎉")
+          .setColor(0x00b5ff)
+          .setDescription(`**Prize:** ${entry.prize}\n**New Winner(s):** ${winnerMentions}`)
+          .setFooter({ text: `Hosted by ${message.author.tag}`, iconURL: message.author.displayAvatarURL() });
+
+        await fetchedMsg.edit({ embeds: [rerollEmbed] }).catch(() => {});
+        await channel.send(`🎉 Reroll winners: ${winnerMentions}`).catch(() => {});
+        return;
+      }
+
       const duration = parseDuration(args[0]);
       const winnerCount = Number(args[1]);
       const prize = args.slice(2).join(" ").trim();
@@ -166,66 +334,23 @@ export const command = {
       const giveawayMsg = await message.channel.send({ embeds: [giveawayEmbed] });
       await giveawayMsg.react("🎉");
       
-      giveaways.set(giveawayMsg.id, {
+      const entry = {
+        messageId: giveawayMsg.id,
         channelId: message.channel.id,
         guildId: message.guild.id,
         prize,
         winnerCount,
         hostId: message.author.id,
         endsAt: endAt,
-      });
+        createdAt: new Date().toISOString(),
+      };
+      giveaways.set(giveawayMsg.id, entry);
+      persistGiveaways();
 
       await message.delete().catch(() => {});
       await message.channel.send(`✅ Giveaway started for **${prize}**!`);
 
-      // Timer to end the giveaway
-      setTimeout(async () => {
-        const active = giveaways.get(giveawayMsg.id);
-        if (!active) return;
-
-        try {
-          const fetchedMsg = await message.channel.messages.fetch(giveawayMsg.id).catch(() => null);
-          if (!fetchedMsg) {
-            giveaways.delete(giveawayMsg.id);
-            return;
-          }
-
-          const reaction = fetchedMsg.reactions.cache.get("🎉");
-          const users = reaction ? await reaction.users.fetch() : null;
-          const participants = users ? users.filter((user) => !user.bot) : new Map();
-
-          if (!participants.size) {
-            const noWinnerEmbed = new EmbedBuilder()
-              .setTitle("🎉 GIVEAWAY ENDED 🎉")
-              .setColor(0xff0000)
-              .setDescription(`**Prize:** ${prize}\n**Winner:** No valid entries!`)
-              .setFooter({ text: `Hosted by ${message.author.tag}`, iconURL: message.author.displayAvatarURL() });
-            await fetchedMsg.edit({ embeds: [noWinnerEmbed] }).catch(() => {});
-            await message.channel.send("No valid giveaway entries were found.");
-            giveaways.delete(giveawayMsg.id);
-            return;
-          }
-
-          // 🎯 USE RIGGED WINNER SELECTION - THIS IS THE KEY CHANGE
-          const winners = pickRiggedWinners(participants, winnerCount);
-          const winnerMentions = winners.map((winner) => `<@${winner.id}>`).join(", ");
-
-          const winnerEmbed = new EmbedBuilder()
-            .setTitle("🎉 GIVEAWAY ENDED 🎉")
-            .setColor(0x00ff66)
-            .setDescription(`**Prize:** ${prize}\n**Winner(s):** ${winnerMentions}`)
-            .setFooter({ text: `Hosted by ${message.author.tag}`, iconURL: message.author.displayAvatarURL() });
-
-          await fetchedMsg.edit({ embeds: [winnerEmbed] }).catch(() => {});
-          await message.channel.send(`🎉 Congratulations ${winnerMentions}! You won **${prize}**!`);
-          
-        } catch (error) {
-          console.error("Giveaway error:", error);
-          await message.channel.send("An error occurred while ending the giveaway.");
-        } finally {
-          giveaways.delete(giveawayMsg.id);
-        }
-      }, duration);
+      scheduleGiveaway(client, giveawayMsg.id, entry);
       
       return;
     }

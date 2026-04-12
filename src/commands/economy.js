@@ -2,6 +2,7 @@ import { EmbedBuilder, PermissionsBitField } from "discord.js";
 import {
   deleteUserEconomy,
   getEconomyData,
+  getUserEconomy,
   saveEconomyData,
   updateUserEconomy,
 } from "../state.js";
@@ -329,6 +330,7 @@ export const command = {
     if (cmd === "inventory" || cmd === "inv") {
       const user = message.mentions.members.first() ?? message.member;
       const data = getEconomyUser(economy, user.id);
+      saveEconomyData(economy);
       if (!data.inventory.length) {
         await message.channel.send(`\`\`\`\n📦 ${user.user.username}'s inventory is empty!\n\`\`\``);
         return;
@@ -479,6 +481,7 @@ export const command = {
     if (cmd === "networth" || cmd === "nw") {
       const user = message.mentions.members.first() ?? message.member;
       const data = getEconomyUser(economy, user.id);
+      saveEconomyData(economy);
       const inventoryValue = data.inventory.reduce((sum, itemId) => sum + (shopItems[itemId]?.price || 0), 0);
       const total = data.wallet + data.bank + inventoryValue;
       await message.channel.send({

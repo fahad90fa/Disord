@@ -4,6 +4,7 @@ import path from "node:path";
 const dbDir = path.join(process.cwd(), "database");
 const files = {
   economy: path.join(dbDir, "economy.json"),
+  giveaways: path.join(dbDir, "giveaways.json"),
   modCases: path.join(dbDir, "mod_cases.json"),
   warnings: path.join(dbDir, "warnings.json"),
   reminders: path.join(dbDir, "reminders.json"),
@@ -13,6 +14,7 @@ const files = {
 
 const defaults = {
   [files.economy]: {},
+  [files.giveaways]: { active: {}, history: [] },
   [files.modCases]: {},
   [files.warnings]: {},
   [files.reminders]: {},
@@ -61,6 +63,14 @@ export function getEconomyData() {
 
 export function saveEconomyData(data) {
   writeJson(files.economy, data);
+}
+
+export function getGiveawaysData() {
+  return readJson(files.giveaways);
+}
+
+export function saveGiveawaysData(data) {
+  writeJson(files.giveaways, data);
 }
 
 export function getUserEconomy(userId) {
