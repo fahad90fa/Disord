@@ -20,32 +20,102 @@
     "rules_message_id": 1491000491260248135,
     "lavalink_nodes": [
         {
-            "identifier": "serenetia-v4",
+            "identifier": "serenetia-v4-ssl",
             "host": "lavalinkv4.serenetia.com",
             "port": 443,
             "password": "https://seretia.link/discord",
             "https": true
         },
         {
-            "identifier": "jirayu-v4",
+            "identifier": "jirayu-v4-ssl",
             "host": "lavalink.jirayu.net",
             "port": 443,
             "password": "youshallnotpass",
             "https": true
         },
         {
-            "identifier": "millohost-v4",
+            "identifier": "millohost-v4-ssl",
             "host": "lava-v4.millohost.my.id",
             "port": 443,
             "password": "https://discord.gg/mjS5J2K3ep",
             "https": true
         },
         {
-            "identifier": "trinium-v4",
+            "identifier": "trinium-v4-ssl",
             "host": "lavalink-v4.triniumhost.com",
             "port": 443,
             "password": "free",
             "https": true
+        },
+        {
+            "identifier": "jirayu-v4",
+            "host": "lavalink.jirayu.net",
+            "port": 13592,
+            "password": "youshallnotpass",
+            "https": false
+        },
+        {
+            "identifier": "serenetia-v4",
+            "host": "lavalinkv4.serenetia.com",
+            "port": 80,
+            "password": "https://seretia.link/discord",
+            "https": false
+        },
+        {
+            "identifier": "sg1-nodelink",
+            "host": "sg1-nodelink.nyxbot.app",
+            "port": 3000,
+            "password": "nyxbot.app/support",
+            "https": false
+        },
+        {
+            "identifier": "sg2-nodelink",
+            "host": "sg2-nodelink.nyxbot.app",
+            "port": 3000,
+            "password": "nyxbot.app/support",
+            "https": false
+        },
+        {
+            "identifier": "g3v-v4",
+            "host": "lava.g3v.co.uk",
+            "port": 9008,
+            "password": "lavalinklol",
+            "https": false
+        },
+        {
+            "identifier": "trinium-free",
+            "host": "lavalink.triniumhost.com",
+            "port": 4333,
+            "password": "free",
+            "https": false
+        },
+        {
+            "identifier": "trinium-kirito",
+            "host": "lavalink.triniumhost.com",
+            "port": 2333,
+            "password": "kirito",
+            "https": false
+        },
+        {
+            "identifier": "nexcloud-v4",
+            "host": "n3.nexcloud.in",
+            "port": 2026,
+            "password": "nexcloud",
+            "https": false
+        },
+        {
+            "identifier": "vexanode-v4",
+            "host": "omega.vexanode.cloud",
+            "port": 2031,
+            "password": "https://discord.vexanode.cloud",
+            "https": false
+        },
+        {
+            "identifier": "kasawa-v4",
+            "host": "lava.kasawa.pro",
+            "port": 2333,
+            "password": "youshallnotpass",
+            "https": false
         }
     ]
 }
