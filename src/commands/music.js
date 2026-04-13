@@ -17,19 +17,23 @@ function isTimeoutError(error) {
   return text.includes("timeout") || text.includes("aborted");
 }
 
+function isSpotifyUnsupportedError(error) {
+  const text = String(error?.message || error || "").toLowerCase();
+  return text.includes("spotify") && text.includes("not 'spotify' enabled");
+}
+
 function buildSearchQuery(rawQuery) {
   const query = String(rawQuery || "").trim();
   if (!query) return { query };
 
   const lower = query.toLowerCase();
-  if (lower.startsWith("http")) {
-    if (lower.includes("soundcloud.com/")) {
-      return { query, source: "scsearch" };
-    }
-    // Return something that will likely fail or just return the text as search if it's not soundcloud
-    return { query: `scsearch:${query}`, source: "scsearch" };
+  if (lower.includes("spotify.com/") || lower.startsWith("spotify:")) {
+    return { query, source: "spsearch" };
   }
-  return { query, source: "scsearch" };
+  if (lower.includes("youtube.com/") || lower.includes("youtu.be/")) {
+    return { query, source: "ytsearch" };
+  }
+  return { query, source: "spsearch" };
 }
 
 function formatDuration(ms) {
@@ -63,6 +67,8 @@ function shorten(text, max = 48) {
 
 function sourceLabel(source) {
   const value = normalizeText(source);
+  if (value.includes("spotify")) return "Spotify";
+  if (value.includes("youtube")) return "YouTube";
   if (value.includes("soundcloud")) return "SoundCloud";
   return source ? shorten(source, 18) : "Unknown";
 }
@@ -180,7 +186,7 @@ function buildNowPlayingEmbed(player) {
       .setDescription(
         "🎧 **The stage is empty!**\n\n" +
         "Join a voice channel and use `!play <song name/url>` to start the music. " +
-        "I support high-quality SoundCloud streams."
+        "I support high-quality Spotify and YouTube streams."
       )
       .addFields(
         { name: "✨ Status", value: "```\nWaiting for tracks...\n```", inline: false },
@@ -216,7 +222,7 @@ function buildNowPlayingEmbed(player) {
 
   if (artwork) embed.setThumbnail(artwork);
   
-  embed.setFooter({ text: "Professional Audio System • SoundCloud Powered", iconURL: "https://cdn.discordapp.com/emojis/1041113066373152828.gif" });
+  embed.setFooter({ text: "Professional Audio System • Spotify & YouTube Powered", iconURL: "https://cdn.discordapp.com/emojis/1041113066373152828.gif" });
   
   return embed;
 }
@@ -391,6 +397,8 @@ export const command = {
       if (!result) {
         if (isTimeoutError(lastError)) {
           await message.channel.send({ embeds: [new EmbedBuilder().setColor(0xff0000).setDescription("❌ Search timed out. Please try again.")] });
+        } else if (isSpotifyUnsupportedError(lastError)) {
+          await message.channel.send({ embeds: [new EmbedBuilder().setColor(0xff0000).setDescription("❌ Spotify links are not supported on this node. Try searching by name.")] });
         } else {
           await message.channel.send({ embeds: [new EmbedBuilder().setColor(0xff0000).setDescription(`❌ Search failed: \`${lastError?.message || "unknown error"}\``)] });
         }
@@ -398,7 +406,7 @@ export const command = {
       }
 
       if (!result.tracks?.length) {
-        await message.channel.send({ embeds: [new EmbedBuilder().setColor(0xff0000).setDescription("❌ No results found on SoundCloud.")] });
+        await message.channel.send({ embeds: [new EmbedBuilder().setColor(0xff0000).setDescription("❌ No results found.")] });
         return;
       }
 
