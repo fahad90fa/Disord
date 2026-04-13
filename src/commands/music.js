@@ -17,20 +17,19 @@ function isTimeoutError(error) {
   return text.includes("timeout") || text.includes("aborted");
 }
 
-function isSpotifyUnsupportedError(error) {
-  const text = String(error?.message || error || "").toLowerCase();
-  return text.includes("spotify") && text.includes("not 'spotify' enabled");
-}
-
 function buildSearchQuery(rawQuery) {
   const query = String(rawQuery || "").trim();
   if (!query) return { query };
 
   const lower = query.toLowerCase();
-  if (lower.includes("open.spotify.com/") || lower.startsWith("spotify:")) {
-    return { query, source: "spsearch" };
+  if (lower.startsWith("http")) {
+    if (lower.includes("soundcloud.com/")) {
+      return { query, source: "scsearch" };
+    }
+    // Return something that will likely fail or just return the text as search if it's not soundcloud
+    return { query: `scsearch:${query}`, source: "scsearch" };
   }
-  return { query, source: "spsearch" };
+  return { query, source: "scsearch" };
 }
 
 function formatDuration(ms) {
@@ -65,8 +64,6 @@ function shorten(text, max = 48) {
 function sourceLabel(source) {
   const value = normalizeText(source);
   if (value.includes("soundcloud")) return "SoundCloud";
-  if (value.includes("youtube")) return "YouTube";
-  if (value.includes("spotify")) return "Spotify";
   return source ? shorten(source, 18) : "Unknown";
 }
 
@@ -109,98 +106,156 @@ async function ensureAiQueue(player, requester, limit = 3) {
 
 function buildButtons(player) {
   const autoplayOn = autoplayState.get(player.guildId) === true;
-  const loopMode = String(player.repeatMode || "off");
+  const loopMode = String(player.repeatMode || "off").toUpperCase();
   const aiOn = aiModeState.get(player.guildId) === true;
+  
   return [
     new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId("music_playpause").setLabel(player.paused ? "Resume" : "Pause").setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId("music_skip").setLabel("Next").setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId("music_stop").setLabel("Stop").setStyle(ButtonStyle.Danger),
-      new ButtonBuilder().setCustomId("music_loop").setLabel(`Loop ${loopMode}`).setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId("music_shuffle").setLabel("Shuffle").setStyle(ButtonStyle.Secondary)
+      new ButtonBuilder()
+        .setCustomId("music_playpause")
+        .setLabel(player.paused ? "Resume" : "Pause")
+        .setEmoji(player.paused ? "▶️" : "⏸️")
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId("music_skip")
+        .setLabel("Skip")
+        .setEmoji("⏭️")
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId("music_stop")
+        .setLabel("Stop")
+        .setEmoji("⏹️")
+        .setStyle(ButtonStyle.Danger),
+      new ButtonBuilder()
+        .setCustomId("music_shuffle")
+        .setLabel("Shuffle")
+        .setEmoji("🔀")
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId("music_loop")
+        .setLabel(`Loop: ${loopMode}`)
+        .setEmoji("🔁")
+        .setStyle(ButtonStyle.Secondary)
     ),
     new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId("music_voldown").setLabel("Vol -").setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId("music_volup").setLabel("Vol +").setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId("music_queue").setLabel("Queue").setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId("music_autoplay").setLabel(autoplayOn ? "Autoplay On" : "Autoplay Off").setStyle(autoplayOn ? ButtonStyle.Success : ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId("music_ai").setLabel(aiOn ? "AI On" : "AI Off").setStyle(aiOn ? ButtonStyle.Success : ButtonStyle.Secondary)
+      new ButtonBuilder()
+        .setCustomId("music_voldown")
+        .setLabel("Vol -")
+        .setEmoji("🔉")
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId("music_volup")
+        .setLabel("Vol +")
+        .setEmoji("🔊")
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId("music_queue")
+        .setLabel("Queue")
+        .setEmoji("📜")
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId("music_autoplay")
+        .setLabel(`Autoplay: ${autoplayOn ? "ON" : "OFF"}`)
+        .setEmoji("📻")
+        .setStyle(autoplayOn ? ButtonStyle.Success : ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId("music_ai")
+        .setLabel(`AI: ${aiOn ? "ON" : "OFF"}`)
+        .setEmoji("🤖")
+        .setStyle(aiOn ? ButtonStyle.Success : ButtonStyle.Secondary)
     ),
   ];
 }
 
 function buildNowPlayingEmbed(player) {
-  const embed = new EmbedBuilder()
-    .setColor(0x12d6a3)
-    .setTimestamp(new Date());
-
   const track = player.queue.current;
+  
+  const embed = new EmbedBuilder()
+    .setColor(0x00ff9d)
+    .setTimestamp();
+
   if (!track) {
     embed
-      .setTitle("ZeroDay Audio Deck")
+      .setAuthor({ name: "Music Player | Idle", iconURL: "https://cdn.discordapp.com/emojis/1041113066373152828.gif" })
       .setDescription(
-        "The player is online but there is nothing live right now.\n\n" +
-        "Use `!play <song>` to start a session and this panel will turn into a live control deck."
+        "🎧 **The stage is empty!**\n\n" +
+        "Join a voice channel and use `!play <song name/url>` to start the music. " +
+        "I support high-quality SoundCloud streams."
       )
       .addFields(
-        { name: "State", value: "Idle", inline: true },
-        { name: "Autoplay", value: autoplayState.get(player.guildId) === true ? "On" : "Off", inline: true },
-        { name: "AI Mode", value: aiModeState.get(player.guildId) === true ? "On" : "Off", inline: true }
+        { name: "✨ Status", value: "```\nWaiting for tracks...\n```", inline: false },
+        { name: "📡 Autoplay", value: autoplayState.get(player.guildId) === true ? "✅ Enabled" : "❌ Disabled", inline: true },
+        { name: "🤖 AI Mode", value: aiModeState.get(player.guildId) === true ? "✅ Active" : "❌ Standby", inline: true }
       );
     return embed;
   }
 
-  const title = String(track.title || track.info?.title || "Unknown Track");
+  const title = track.title || track.info?.title || "Unknown Track";
+  const author = track.info?.author || "Unknown Artist";
   const duration = formatDuration(track.duration ?? track.info?.duration ?? track.info?.length);
-  const volume = Number.isFinite(player.volume) ? `${player.volume}%` : "Unknown";
-  const loopMode = String(player.repeatMode || "off");
   const position = formatDuration(player.position ?? 0);
-  const bar = progressBar(player.position ?? 0, track.duration ?? track.info?.duration ?? track.info?.length);
-  const autoplayOn = autoplayState.get(player.guildId) === true;
-  const aiOn = aiModeState.get(player.guildId) === true;
-  const vibe = vibeState.get(player.guildId) || "default";
-  const source = sourceLabel(track.info?.sourceName || "unknown");
-  const artwork = track.info?.artworkUrl || track.info?.thumbnail || null;
-  const author = shorten(track.info?.author || "Unknown Artist", 32);
+  const bar = progressBar(player.position ?? 0, track.duration ?? track.info?.duration ?? track.info?.length, 18);
+  const volume = player.volume ?? 100;
   const requester = track.requester?.id ? `<@${track.requester.id}>` : "Unknown";
-  const queueSize = player.queue.tracks?.length || 0;
-  const nextUp = player.queue.tracks?.slice(0, 3) || [];
-  const queuePreview = nextUp.length
-    ? nextUp.map((item, index) => `${index + 1}. ${shorten(item.title || item.info?.title || "Unknown Track", 44)}`).join("\n")
-    : "Queue is clear. Add more tracks to keep the deck moving.";
-  const statusLine = [
-    player.paused ? "Paused" : "Live",
-    `Vol ${volume}`,
-    `Loop ${loopMode}`,
-    autoplayOn ? "Autoplay" : "Manual",
-    aiOn ? "AI Active" : "AI Standby",
-  ].join(" | ");
+  const artwork = track.info?.artworkUrl || track.info?.thumbnail || null;
+  const nextUp = player.queue.tracks?.[0];
+  const loopMode = player.repeatMode || "off";
 
   embed
-    .setTitle("ZeroDay Audio Deck")
-    .setDescription(
-      `**${shorten(title, 96)}**\n` +
-      `${author}\n\n` +
-      `\`${statusLine}\``
-    )
+    .setAuthor({ name: "Now Playing", iconURL: "https://cdn.discordapp.com/emojis/1041113066373152828.gif" })
+    .setTitle(shorten(title, 256))
+    .setURL(track.uri || null)
+    .setDescription(`by **${shorten(author, 100)}**`)
     .addFields(
-      { name: "Timeline", value: `\`${position}\` ${bar} \`${duration}\``, inline: false },
-      { name: "Up Next", value: queuePreview, inline: false },
-      { name: "Requester", value: requester, inline: true },
-      { name: "Source", value: source, inline: true },
-      { name: "Queued", value: `${queueSize}`, inline: true },
-      { name: "Vibe Engine", value: shorten(vibe, 24), inline: true },
-      { name: "Node Volume", value: volume, inline: true },
-      { name: "Session Mode", value: aiOn ? "AI radio" : autoplayOn ? "Autoplay" : "Manual queue", inline: true }
+      { name: "📊 Progress", value: `\`${position}\` ${bar} \`${duration}\``, inline: false },
+      { name: "👤 Requested By", value: requester, inline: true },
+      { name: "🔊 Volume", value: `\`${volume}%\``, inline: true },
+      { name: "🔄 Loop", value: `\`${loopMode.toUpperCase()}\``, inline: true },
+      { name: "🎵 Next Up", value: nextUp ? `**${shorten(nextUp.title || nextUp.info?.title, 40)}**` : "*Queue is empty*", inline: false }
     );
 
-  if (track.uri) {
-    embed.addFields({ name: "Direct Link", value: track.uri, inline: false });
+  if (artwork) embed.setThumbnail(artwork);
+  
+  embed.setFooter({ text: "Professional Audio System • SoundCloud Powered", iconURL: "https://cdn.discordapp.com/emojis/1041113066373152828.gif" });
+  
+  return embed;
+}
+
+function buildQueueEmbed(player) {
+  const current = player.queue.current;
+  const tracks = player.queue.tracks ?? [];
+  const embed = new EmbedBuilder()
+    .setColor(0x00ff9d)
+    .setTitle("📜 Music Queue")
+    .setTimestamp();
+
+  if (!current && !tracks.length) {
+    embed.setDescription("The queue is currently empty.");
+    return embed;
   }
-  if (artwork) {
-    embed.setThumbnail(artwork).setImage(artwork);
+
+  let description = "";
+  if (current) {
+    description += `**Now Playing:**\n[${shorten(current.title || current.info?.title, 64)}](${current.uri})\n\n`;
   }
-  embed.setFooter({ text: "ZeroDay Music System" });
+
+  if (tracks.length) {
+    description += "**Up Next:**\n";
+    description += tracks
+      .slice(0, 10)
+      .map((track, i) => `\`${i + 1}.\` ${shorten(track.title || track.info?.title, 50)}`)
+      .join("\n");
+    
+    if (tracks.length > 10) {
+      description += `\n*...and ${tracks.length - 10} more tracks*`;
+    }
+  } else {
+    description += "*No more tracks in queue.*";
+  }
+
+  embed.setDescription(description);
+  embed.setFooter({ text: `Total Tracks: ${tracks.length + (current ? 1 : 0)} | Loop: ${(player.repeatMode || "off").toUpperCase()}` });
+  
   return embed;
 }
 
@@ -272,34 +327,34 @@ export const command = {
 
     if (cmd === "join" || cmd === "summon") {
       if (!voiceChannelId) {
-        await message.channel.send("```\n❌ Join a voice channel first.\n```");
+        await message.channel.send({ embeds: [new EmbedBuilder().setColor(0xff0000).setDescription("❌ Join a voice channel first.")] });
         return;
       }
       const player = getPlayer();
       if (!player.connected) await player.connect();
-      await message.channel.send("```\n✅ Connected.\n```");
+      await message.channel.send({ embeds: [new EmbedBuilder().setColor(0x00ff9d).setDescription("✅ Successfully joined your voice channel.")] });
       return;
     }
 
     if (cmd === "leave" || cmd === "disconnect") {
       const player = manager.getPlayer(message.guild.id);
       if (!player) {
-        await message.channel.send("```\n❌ Not connected.\n```");
+        await message.channel.send({ embeds: [new EmbedBuilder().setColor(0xff0000).setDescription("❌ I am not connected to any voice channel.")] });
         return;
       }
       await player.destroy();
-      await message.channel.send("```\n✅ Disconnected.\n```");
+      await message.channel.send({ embeds: [new EmbedBuilder().setColor(0x00ff9d).setDescription("✅ Disconnected and cleared the session.")] });
       return;
     }
 
     if (cmd === "play" || cmd === "p") {
       if (!voiceChannelId) {
-        await message.channel.send("```\n❌ Join a voice channel first.\n```");
+        await message.channel.send({ embeds: [new EmbedBuilder().setColor(0xff0000).setDescription("❌ Join a voice channel first to play music.")] });
         return;
       }
       const query = args.join(" ");
       if (!query) {
-        await message.channel.send("```\n❌ Usage: !play <song>\n```");
+        await message.channel.send({ embeds: [new EmbedBuilder().setColor(0xffbb00).setDescription("ℹ️ Usage: `!play <song name/url>`")] });
         return;
       }
 
@@ -309,7 +364,7 @@ export const command = {
         .filter((node) => node?.connected)
         .map((node) => node.options.id);
       if (!connectedNodes.length) {
-        await message.channel.send("```\n❌ No healthy Lavalink nodes are connected right now.\n```");
+        await message.channel.send({ embeds: [new EmbedBuilder().setColor(0xff0000).setDescription("❌ No healthy music nodes are available right now.")] });
         return;
       }
 
@@ -335,28 +390,27 @@ export const command = {
 
       if (!result) {
         if (isTimeoutError(lastError)) {
-          await message.channel.send("```\n❌ Lavalink search timed out on all nodes. Try again in a few seconds.\n```");
-        } else if (isSpotifyUnsupportedError(lastError)) {
-          await message.channel.send(
-            "```\n❌ Spotify links are not supported on this Lavalink node.\nUse the track name instead, for example: !play artist - song name\n```"
-          );
+          await message.channel.send({ embeds: [new EmbedBuilder().setColor(0xff0000).setDescription("❌ Search timed out. Please try again.")] });
         } else {
-          await message.channel.send(`\`\`\`\n❌ Search failed: ${lastError?.message || "unknown error"}\n\`\`\``);
+          await message.channel.send({ embeds: [new EmbedBuilder().setColor(0xff0000).setDescription(`❌ Search failed: \`${lastError?.message || "unknown error"}\``)] });
         }
         return;
       }
 
       if (!result.tracks?.length) {
-        await message.channel.send("```\n❌ No results found.\n```");
+        await message.channel.send({ embeds: [new EmbedBuilder().setColor(0xff0000).setDescription("❌ No results found on SoundCloud.")] });
         return;
       }
 
       if (result.loadType === "playlist") {
         await player.queue.add(result.tracks);
-        await message.channel.send(`✅ Added playlist: ${result.playlist?.name ?? "Playlist"} (${result.tracks.length} tracks)`);
+        const playlistName = result.playlist?.name || result.playlist?.info?.name || "Playlist";
+        await message.channel.send(`✅ Added playlist: **${playlistName}** (${result.tracks.length} tracks)`);
       } else {
-        await player.queue.add(result.tracks[0]);
-        await message.channel.send(`✅ Queued: ${result.tracks[0].title}`);
+        const track = result.tracks[0];
+        await player.queue.add(track);
+        const title = track.title || track.info?.title || "Unknown Track";
+        await message.channel.send(`✅ Queued: **${title}**`);
       }
 
       if (!player.playing && !player.paused && !player.queue.current) {
@@ -375,34 +429,34 @@ export const command = {
 
     const player = manager.getPlayer(message.guild.id);
     if (!player) {
-      await message.channel.send("```\n❌ Not connected.\n```");
+      await message.channel.send({ embeds: [new EmbedBuilder().setColor(0xff0000).setDescription("❌ The music player is not active in this server.")] });
       return;
     }
 
     if (cmd === "pause") {
       await player.pause();
-      await message.channel.send("```\n⏸️ Paused.\n```");
+      await message.channel.send({ embeds: [new EmbedBuilder().setColor(0x00ff9d).setDescription("⏸️ Playback has been paused.")] });
       await updateControlMessage(player);
       return;
     }
 
     if (cmd === "resume") {
       await player.resume();
-      await message.channel.send("```\n▶️ Resumed.\n```");
+      await message.channel.send({ embeds: [new EmbedBuilder().setColor(0x00ff9d).setDescription("▶️ Playback has been resumed.")] });
       await updateControlMessage(player);
       return;
     }
 
     if (cmd === "stop") {
       await player.stopPlaying(true, false);
-      await message.channel.send("```\n⏹️ Stopped and cleared.\n```");
+      await message.channel.send({ embeds: [new EmbedBuilder().setColor(0x00ff9d).setDescription("⏹️ Stopped playback and cleared the queue.")] });
       await updateControlMessage(player);
       return;
     }
 
     if (cmd === "skip" || cmd === "next") {
       await player.skip();
-      await message.channel.send("```\n⏭️ Skipped.\n```");
+      await message.channel.send({ embeds: [new EmbedBuilder().setColor(0x00ff9d).setDescription("⏭️ Skipped to the next track.")] });
       return;
     }
 
@@ -412,43 +466,37 @@ export const command = {
     }
 
     if (cmd === "queue" || cmd === "q") {
-      const current = player.queue.current;
-      const tracks = player.queue.tracks ?? [];
-      const lines = [];
-      if (current) lines.push(`Now: ${current.title}`);
-      tracks.slice(0, 10).forEach((t, i) => lines.push(`${i + 1}. ${t.title}`));
-      if (tracks.length > 10) lines.push(`...and ${tracks.length - 10} more`);
-      await message.channel.send("```\n" + (lines.join("\n") || "Queue is empty.") + "\n```");
+      await message.channel.send({ embeds: [buildQueueEmbed(player)] });
       return;
     }
 
     if (cmd === "volume" || cmd === "vol") {
       const vol = Number(args[0]);
-      if (!vol || vol < 0 || vol > 200) {
-        await message.channel.send("```\n❌ Usage: !volume <0-200>\n```");
+      if (isNaN(vol) || vol < 0 || vol > 200) {
+        await message.channel.send({ embeds: [new EmbedBuilder().setColor(0xffbb00).setDescription("ℹ️ Usage: `!volume <0-200>`")] });
         return;
       }
       await player.setVolume(vol);
       await updateControlMessage(player);
-      await message.channel.send(`✅ Volume set to ${vol}%`);
+      await message.channel.send({ embeds: [new EmbedBuilder().setColor(0x00ff9d).setDescription(`🔊 Volume set to **${vol}%**`)] });
       return;
     }
 
     if (cmd === "loop") {
       const mode = (args[0] || "off").toLowerCase();
       if (!["off", "track", "queue"].includes(mode)) {
-        await message.channel.send("```\n❌ Usage: !loop off|track|queue\n```");
+        await message.channel.send({ embeds: [new EmbedBuilder().setColor(0xffbb00).setDescription("ℹ️ Usage: `!loop <off|track|queue>`")] });
         return;
       }
       await player.setRepeatMode(mode);
       await updateControlMessage(player);
-      await message.channel.send(`✅ Loop mode set to ${mode}`);
+      await message.channel.send({ embeds: [new EmbedBuilder().setColor(0x00ff9d).setDescription(`🔄 Loop mode set to **${mode.toUpperCase()}**`)] });
       return;
     }
 
     if (cmd === "shuffle") {
       await player.queue.shuffle();
-      await message.channel.send("✅ Queue shuffled.");
+      await message.channel.send({ embeds: [new EmbedBuilder().setColor(0x00ff9d).setDescription("🔀 Queue has been shuffled.")] });
       return;
     }
 
@@ -456,30 +504,30 @@ export const command = {
       if (player.queue.tracks.length) {
         await player.queue.splice(0, player.queue.tracks.length);
       }
-      await message.channel.send("✅ Queue cleared.");
+      await message.channel.send({ embeds: [new EmbedBuilder().setColor(0x00ff9d).setDescription("🗑️ Queue has been cleared.")] });
       return;
     }
 
     if (cmd === "remove") {
       const index = Number(args[0]);
-      if (!index) {
-        await message.channel.send("```\n❌ Usage: !remove <index>\n```");
+      if (isNaN(index)) {
+        await message.channel.send({ embeds: [new EmbedBuilder().setColor(0xffbb00).setDescription("ℹ️ Usage: `!remove <index>`")] });
         return;
       }
       const removed = await player.queue.remove(index - 1);
       if (!removed?.removed?.length) {
-        await message.channel.send("```\n❌ Invalid index.\n```");
+        await message.channel.send({ embeds: [new EmbedBuilder().setColor(0xff0000).setDescription("❌ Invalid track index.")] });
         return;
       }
-      await message.channel.send(`✅ Removed: ${removed.removed[0]?.title ?? "Track"}`);
+      await message.channel.send({ embeds: [new EmbedBuilder().setColor(0x00ff9d).setDescription(`✅ Removed **${removed.removed[0]?.title ?? "Track"}** from queue.`)] });
       return;
     }
 
     if (cmd === "move") {
       const from = Number(args[0]);
       const to = Number(args[1]);
-      if (!from || !to) {
-        await message.channel.send("```\n❌ Usage: !move <from> <to>\n```");
+      if (isNaN(from) || isNaN(to)) {
+        await message.channel.send({ embeds: [new EmbedBuilder().setColor(0xffbb00).setDescription("ℹ️ Usage: `!move <from_index> <to_index>`")] });
         return;
       }
       const fromIndex = from - 1;
@@ -490,28 +538,31 @@ export const command = {
         fromIndex >= player.queue.tracks.length ||
         toIndex >= player.queue.tracks.length
       ) {
-        await message.channel.send("```\n❌ Invalid positions.\n```");
+        await message.channel.send({ embeds: [new EmbedBuilder().setColor(0xff0000).setDescription("❌ Invalid track positions.")] });
         return;
       }
       const extracted = await player.queue.splice(fromIndex, 1);
       const track = Array.isArray(extracted) ? extracted[0] : extracted;
       if (!track) {
-        await message.channel.send("```\n❌ Failed to move track.\n```");
+        await message.channel.send({ embeds: [new EmbedBuilder().setColor(0xff0000).setDescription("❌ Failed to move track.")] });
         return;
       }
       await player.queue.add(track, toIndex);
-      await message.channel.send(`✅ Moved track to position ${to}`);
+      await message.channel.send({ embeds: [new EmbedBuilder().setColor(0x00ff9d).setDescription(`✅ Moved track to position **${to}**`)] });
       return;
     }
 
     if (cmd === "nodes") {
       const nodes = manager.nodeManager?.nodes ?? [];
       if (!nodes.length) {
-        await message.channel.send("```\n❌ No Lavalink nodes connected.\n```");
+        await message.channel.send({ embeds: [new EmbedBuilder().setColor(0xff0000).setDescription("❌ No music nodes connected.")] });
         return;
       }
-      const lines = nodes.map((n) => `${n.options.id} | ${n.options.host}:${n.options.port} | connected=${n.connected}`);
-      await message.channel.send("```\n" + lines.join("\n") + "\n```");
+      const embed = new EmbedBuilder()
+        .setColor(0x00ff9d)
+        .setTitle("📡 Music Nodes Status")
+        .setDescription(nodes.map((n) => `\`${n.options.id}\` • ${n.options.host} • ${n.connected ? "✅ Online" : "❌ Offline"}`).join("\n"));
+      await message.channel.send({ embeds: [embed] });
       return;
     }
 
@@ -519,7 +570,7 @@ export const command = {
       const current = autoplayState.get(message.guild.id) === true;
       autoplayState.set(message.guild.id, !current);
       await updateControlMessage(player);
-      await message.channel.send(`✅ Autoplay ${!current ? "enabled" : "disabled"}.`);
+      await message.channel.send({ embeds: [new EmbedBuilder().setColor(0x00ff9d).setDescription(`📻 Autoplay is now **${!current ? "ENABLED" : "DISABLED"}**.`)] });
       return;
     }
 
@@ -527,35 +578,38 @@ export const command = {
       const current = aiModeState.get(message.guild.id) === true;
       aiModeState.set(message.guild.id, !current);
       await updateControlMessage(player);
-      await message.channel.send(`✅ AI Mode ${!current ? "enabled" : "disabled"}.`);
+      await message.channel.send({ embeds: [new EmbedBuilder().setColor(0x00ff9d).setDescription(`🤖 AI Mode is now **${!current ? "ENABLED" : "DISABLED"}**.`)] });
       return;
     }
 
     if (cmd === "vibe") {
       const vibe = args.join(" ").trim();
       if (!vibe) {
-        await message.channel.send("```\n❌ Usage: !vibe <mood|genre|theme>\n```");
+        await message.channel.send({ embeds: [new EmbedBuilder().setColor(0xffbb00).setDescription("ℹ️ Usage: `!vibe <mood/genre/theme>`")] });
         return;
       }
       vibeState.set(message.guild.id, vibe.slice(0, 60));
       await updateControlMessage(player);
-      await message.channel.send(`✅ Vibe set to: ${vibe}`);
+      await message.channel.send({ embeds: [new EmbedBuilder().setColor(0x00ff9d).setDescription(`✨ Vibe engine set to: **${vibe}**`)] });
       return;
     }
 
     if (cmd === "suggest") {
       const prompt = args.join(" ").trim();
       if (!prompt) {
-        await message.channel.send("```\n❌ Usage: !suggest <prompt>\n```");
+        await message.channel.send({ embeds: [new EmbedBuilder().setColor(0xffbb00).setDescription("ℹ️ Usage: `!suggest <prompt>`")] });
         return;
       }
       const res = await player.search(buildSearchQuery(prompt), message.author).catch(() => null);
       if (!res?.tracks?.length) {
-        await message.channel.send("```\n❌ No suggestions found.\n```");
+        await message.channel.send({ embeds: [new EmbedBuilder().setColor(0xff0000).setDescription("❌ No suggestions found for that prompt.")] });
         return;
       }
-      const lines = res.tracks.slice(0, 5).map((track, i) => `${i + 1}. ${track.title}`);
-      await message.channel.send("```\n" + lines.join("\n") + "\n```");
+      const embed = new EmbedBuilder()
+        .setColor(0x00ff9d)
+        .setTitle("💡 Music Suggestions")
+        .setDescription(res.tracks.slice(0, 5).map((track, i) => `\`${i + 1}.\` **${track.title}**`).join("\n"));
+      await message.channel.send({ embeds: [embed] });
       return;
     }
   },
@@ -617,13 +671,7 @@ export async function handleInteraction({ client, interaction }) {
 
   const action = interaction.customId;
   if (action === "music_queue") {
-    const current = player.queue.current;
-    const tracks = player.queue.tracks ?? [];
-    const lines = [];
-    if (current) lines.push(`Now: ${current.title}`);
-    tracks.slice(0, 10).forEach((track, index) => lines.push(`${index + 1}. ${track.title}`));
-    if (tracks.length > 10) lines.push(`...and ${tracks.length - 10} more`);
-    await interaction.reply({ content: "```\n" + (lines.join("\n") || "Queue is empty.") + "\n```", flags: 64 });
+    await interaction.reply({ embeds: [buildQueueEmbed(player)], flags: 64 });
     return true;
   }
 
