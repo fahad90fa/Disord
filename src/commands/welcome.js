@@ -19,7 +19,7 @@ function buildWelcomeEmbed(member, style, isTest = false) {
     cyberpunk: 0xff2d55,
   };
   const titleMap = {
-    main: "🎉 Welcome to ZeroDay Tools",
+    main: `🎉 Welcome to ${member.guild.name}`,
     compact: "👋 Welcome",
     hacker: "💻 Access Granted",
     matrix: "🟢 Connection Established",
@@ -60,7 +60,7 @@ function buildWelcomeEmbed(member, style, isTest = false) {
       { name: "Joined As", value: `#${member.guild.memberCount}`, inline: true },
       { name: "Mode", value: isTest ? "Test Preview" : style.toUpperCase(), inline: true }
     )
-    .setFooter({ text: "ZeroDay Tools Welcome System" })
+    .setFooter({ text: `${member.guild.name} Welcome System` })
     .setTimestamp(new Date());
 }
 

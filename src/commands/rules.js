@@ -119,8 +119,71 @@ function buildRulesEmbeds() {
 
 export const command = {
   name: "postrules",
-  aliases: [],
-  async execute({ message, config }) {
+  aliases: ["serverrules"],
+  async execute({ message, args, config }) {
+    const cmd = message.content.slice(config.prefix.length).trim().split(/\s+/)[0].toLowerCase();
+
+    if (cmd === "serverrules") {
+      const ownerId = process.env.OWNER_ID || config.owner_id;
+      if (ownerId && message.author.id !== String(ownerId)) {
+        await message.channel.send("```\n❌ This command is owner-only.\n```");
+        return;
+      }
+
+      const rulesEmbed = new EmbedBuilder()
+        .setColor(0x2b2d31)
+        .setTitle("📜 SERVER RULES & GUIDELINES")
+        .setDescription("Welcome to our community! To ensure a safe and pleasant environment for everyone, please follow these rules:")
+        .setThumbnail(message.guild.iconURL({ dynamic: true }))
+        .addFields(
+          { 
+            name: "⊱・ Respect Everyone ・⊰", 
+            value: "Any type of discrimination against religion, race, culture, sex or sexuality is strictly forbidden. This server welcomes everyone! If anyone is secretly offending you or shading you from the server, then report it to the moderators or co-owner. We will try everything in our power to help you out.",
+            inline: false 
+          },
+          { 
+            name: "⊱・ No NSFW ・⊰", 
+            value: "NSFW content in the server is not allowed as it can make people uncomfortable. Respect all ages. Anything containing slurs or gore is also not allowed. If it's a minor gore, then put a TW/spoiler on it.",
+            inline: false 
+          },
+          { 
+            name: "⊱・ Avoid Drama ・⊰", 
+            value: "Try your very best not to talk about controversial topics in the server, drama outside the server should stay outside. Keep the server healthy for everyone. Hate speech or death threats against anyone will not be tolerated.",
+            inline: false 
+          },
+          { 
+            name: "⊱・ No Sharing Of Personal Information ・⊰", 
+            value: "Your address, phone numbers, or anything else that could be considered highly personal. You are responsible for your own safety.",
+            inline: false 
+          },
+          { 
+            name: "⊱・ No Spamming ・⊰", 
+            value: "No spam ping or spamming of emotes or messages is allowed, it can be very annoying to some people.",
+            inline: false 
+          },
+          { 
+            name: "⊱・ Swearing is allowed but at a minimum ・⊰", 
+            value: "There's a limit to everything, keep your cussing at a minimum as much as possible, no swearing towards a member is allowed.",
+            inline: false 
+          },
+          { 
+            name: "⊱・ Use Channels as directed ・⊰", 
+            value: "Do not misuse the channels please, use all channels correctly.",
+            inline: false 
+          },
+          { 
+            name: "⊱・ No Server Invite Links ・⊰", 
+            value: "Server promotion is not allowed, if someone in the server is promoting their server in DMs then let us know.",
+            inline: false 
+          }
+        )
+        .setFooter({ text: "We take criticism very seriously. You can suggest rules by DMing us.", iconURL: message.guild.iconURL() })
+        .setTimestamp();
+
+      await message.channel.send({ embeds: [rulesEmbed] });
+      return;
+    }
+
     if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
       await message.channel.send("```\n❌ You need Administrator permission.\n```");
       return;
