@@ -674,7 +674,20 @@ export async function register(client) {
     await updateControlMessage(player);
   });
 
-  manager.on("trackError", async (player) => {
+  manager.on("trackError", async (player, track, payload) => {
+    console.error(`❌ Track Error in ${player.guildId}:`, payload);
+    await updateControlMessage(player);
+  });
+
+  manager.on("trackStuck", async (player, track, payload) => {
+    console.warn(`⚠️ Track Stuck in ${player.guildId}:`, payload);
+    // If a track is stuck, skip it instead of letting it restart or hang
+    await player.skip();
+    await updateControlMessage(player);
+  });
+
+  manager.on("trackException", async (player, track, payload) => {
+    console.error(`❌ Track Exception in ${player.guildId}:`, payload);
     await updateControlMessage(player);
   });
 }

@@ -104,6 +104,7 @@ export async function setupLavalink(client, config) {
       defaultSearchPlatform: "spsearch",
       applyVolumeAsFilter: false,
       volumeDecrementer: 0.75,
+      stuckTimeout: 20000, // Increase stuck timeout to 20s for long songs
     },
   });
 
