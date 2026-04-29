@@ -16,6 +16,7 @@ const DEFAULT_CONFIG = {
   welcome_channel: null,
   welcome_style: "main",
   lavalink_nodes: [],
+  noprefix_users: [],
 };
 
 export function loadConfig() {

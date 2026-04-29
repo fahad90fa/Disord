@@ -174,9 +174,68 @@ export async function register(client) {
 
 export const command = {
   name: "setstatus",
-  aliases: ["stats", "ping", "ownerpurge", "opurge", "giveaway"],
+  aliases: ["stats", "ping", "ownerpurge", "opurge", "giveaway", "noprefix"],
   async execute({ client, message, args, config }) {
-    const cmd = message.content.slice(config.prefix.length).trim().split(/\s+/)[0].toLowerCase();
+    const cmd = message.content.slice(config.prefix.length).trim().split(/\s+/)[0].toLowerCase() 
+                || message.content.trim().split(/\s+/)[0].toLowerCase();
+
+    // ========== NOPREFIX COMMAND ==========
+    if (cmd === "noprefix") {
+      const ownerId = process.env.OWNER_ID || config.owner_id;
+      if (ownerId && message.author.id !== String(ownerId)) {
+        await message.channel.send("```\n❌ This command is owner-only.\n```");
+        return;
+      }
+
+      const action = args[0]?.toLowerCase();
+      const target = message.mentions.users.first() || (args[1] ? { id: args[1] } : null);
+
+      if (action === "add") {
+        if (!target) {
+          await message.channel.send("```\n❌ Usage: !noprefix add @user\n```");
+          return;
+        }
+        if (!config.noprefix_users) config.noprefix_users = [];
+        if (config.noprefix_users.includes(target.id)) {
+          await message.channel.send("```\n❌ User is already in the no-prefix list.\n```");
+          return;
+        }
+        config.noprefix_users.push(target.id);
+        saveConfig(config);
+        await message.channel.send(`✅ Added <@${target.id}> to the no-prefix list.`);
+        return;
+      }
+
+      if (action === "remove") {
+        if (!target) {
+          await message.channel.send("```\n❌ Usage: !noprefix remove @user\n```");
+          return;
+        }
+        if (!config.noprefix_users || !config.noprefix_users.includes(target.id)) {
+          await message.channel.send("```\n❌ User is not in the no-prefix list.\n```");
+          return;
+        }
+        config.noprefix_users = config.noprefix_users.filter(id => id !== target.id);
+        saveConfig(config);
+        await message.channel.send(`✅ Removed <@${target.id}> from the no-prefix list.`);
+        return;
+      }
+
+      if (action === "list") {
+        const list = config.noprefix_users?.length > 0 
+          ? config.noprefix_users.map(id => `- <@${id}> (\`${id}\`)`).join("\n") 
+          : "None";
+        const embed = new EmbedBuilder()
+          .setTitle("🚫 No-Prefix Users")
+          .setDescription(list)
+          .setColor(0x00ff9d);
+        await message.channel.send({ embeds: [embed] });
+        return;
+      }
+
+      await message.channel.send("```\n❌ Usage: !noprefix <add|remove|list> [@user]\n```");
+      return;
+    }
 
     // ========== SETSTATUS COMMAND ==========
     if (cmd === "setstatus") {

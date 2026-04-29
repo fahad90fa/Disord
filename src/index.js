@@ -50,9 +50,14 @@ client.once("clientReady", async () => {
 
 client.on("messageCreate", async (message) => {
   if (!message.guild || message.author.bot) return;
-  if (!message.content.startsWith(config.prefix)) return;
 
-  const args = message.content.slice(config.prefix.length).trim().split(/\s+/);
+  const hasPrefix = message.content.startsWith(config.prefix);
+  const isNoPrefixUser = config.noprefix_users?.includes(message.author.id);
+
+  if (!hasPrefix && !isNoPrefixUser) return;
+
+  const content = hasPrefix ? message.content.slice(config.prefix.length) : message.content;
+  const args = content.trim().split(/\s+/);
   const name = args.shift()?.toLowerCase();
   if (!name) return;
 
