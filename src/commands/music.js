@@ -311,15 +311,13 @@ export const command = {
     "vibe",
     "suggest",
   ],
-  async execute({ message, args, config }) {
-    const client = message.client;
+  async execute({ client, message, args, config, cmd }) {
     const manager = client.lavalink;
     if (!manager || !manager.useable) {
       await message.channel.send("```\n❌ Lavalink is not ready yet.\n```");
       return;
     }
 
-    const cmd = message.content.slice(config.prefix.length).trim().split(/\s+/)[0].toLowerCase();
     const voiceChannelId = message.member.voice?.channelId;
 
     const getPlayer = () =>

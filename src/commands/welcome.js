@@ -71,8 +71,7 @@ async function sendWelcome(channel, member, style, isTest = false) {
 export const command = {
   name: "welcome",
   aliases: ["testwelcome", "disablewelcome", "welcomestats", "setwelcomestyle"],
-  async execute({ message, args, config }) {
-    const cmd = message.content.split(/\s+/)[0].replace(config.prefix, "").toLowerCase();
+  async execute({ message, args, config, cmd }) {
     if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
       await message.channel.send("```\n❌ You need Administrator permission.\n```");
       return;

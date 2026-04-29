@@ -33,8 +33,7 @@ async function resolveTarget(message) {
 export const command = {
   name: "banner",
   aliases: ["userbanner", "ub", "userinfo", "ui", "whois", "user", "memberinfo"],
-  async execute({ message, config }) {
-    const cmd = message.content.split(/\s+/)[0].replace(config.prefix, "").toLowerCase();
+  async execute({ message, config, cmd }) {
     const { member, user, fetchedUser } = await resolveTarget(message);
 
     if (cmd === "banner" || cmd === "userbanner" || cmd === "ub") {

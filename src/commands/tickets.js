@@ -4,9 +4,7 @@ import { db } from "../db.js";
 export const command = {
   name: "ticket",
   aliases: ["closeticket", "mytickets", "add", "remove", "adduser", "removeuser", "rename", "transcript"],
-  async execute({ message, args, config }) {
-    const cmd = message.content.slice(config.prefix.length).trim().split(/\s+/)[0].toLowerCase();
-
+  async execute({ message, args, config, cmd }) {
     if (cmd === "ticket") {
       const reason = args.join(" ") || "Support Request";
       const categoryId = config.ticket_category;

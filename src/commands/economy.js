@@ -86,8 +86,7 @@ export const command = {
     "removecoins",
     "reseteconomy",
   ],
-  async execute({ message, args, config }) {
-    const cmd = message.content.slice(config.prefix.length).trim().split(/\s+/)[0].toLowerCase();
+  async execute({ message, args, config, cmd }) {
     const economy = getEconomyData();
 
     if (cmd === "balance" || cmd === "bal" || cmd === "money") {

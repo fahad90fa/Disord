@@ -73,9 +73,7 @@ export const command = {
     "profilepic",
     "hash",
   ],
-  async execute({ message, args, config }) {
-    const cmd = message.content.slice(config.prefix.length).trim().split(/\s+/)[0].toLowerCase();
-
+  async execute({ message, args, config, cmd }) {
     if (cmd === "remind" || cmd === "reminder" || cmd === "remindme") {
       const duration = parseTime(args[0]);
       const reminderMessage = args.slice(1).join(" ");
@@ -265,7 +263,8 @@ export async function register(client, config) {
       const afkData = getAfkData();
       const userKey = String(message.author.id);
 
-      if (afkData[userKey] && !message.content.startsWith(`${config.prefix}afk`)) {
+      const isAfkCmd = message.content.startsWith(`${config.prefix}afk`) || message.content.trim().toLowerCase().startsWith("afk");
+      if (afkData[userKey] && !isAfkCmd) {
         const info = afkData[userKey];
         const duration = formatDuration((Date.now() - new Date(info.time).getTime()) / 1000);
         delete afkData[userKey];

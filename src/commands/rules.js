@@ -120,9 +120,7 @@ function buildRulesEmbeds() {
 export const command = {
   name: "postrules",
   aliases: ["serverrules"],
-  async execute({ message, args, config }) {
-    const cmd = message.content.slice(config.prefix.length).trim().split(/\s+/)[0].toLowerCase();
-
+  async execute({ message, args, config, cmd }) {
     if (cmd === "serverrules") {
       const ownerId = process.env.OWNER_ID || config.owner_id;
       if (ownerId && message.author.id !== String(ownerId)) {

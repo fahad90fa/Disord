@@ -4,9 +4,7 @@ import { db } from "../db.js";
 export const command = {
   name: "products",
   aliases: ["product", "buy", "orders", "order", "addproduct", "removeproduct"],
-  async execute({ message, args, config }) {
-    const cmd = message.content.slice(config.prefix.length).trim().split(/\s+/)[0].toLowerCase();
-
+  async execute({ message, args, config, cmd }) {
     if (cmd === "products") {
       const category = args[0];
       const products = db.getProducts(category);

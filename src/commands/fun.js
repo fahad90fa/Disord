@@ -121,9 +121,7 @@ export const command = {
     "trivia",
     "riddle",
   ],
-  async execute({ message, args, config }) {
-    const cmd = message.content.slice(config.prefix.length).trim().split(/\s+/)[0].toLowerCase();
-
+  async execute({ message, args, config, cmd }) {
     if (cmd === "8ball") {
       const question = args.join(" ");
       if (!question) {

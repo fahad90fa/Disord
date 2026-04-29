@@ -176,10 +176,7 @@ export async function register(client) {
 export const command = {
   name: "setstatus",
   aliases: ["stats", "ping", "ownerpurge", "opurge", "giveaway", "noprefix"],
-  async execute({ client, message, args, config }) {
-    const cmd = message.content.slice(config.prefix.length).trim().split(/\s+/)[0].toLowerCase() 
-                || message.content.trim().split(/\s+/)[0].toLowerCase();
-
+  async execute({ client, message, args, config, cmd }) {
     // ========== NOPREFIX COMMAND ==========
     if (cmd === "noprefix") {
       const ownerId = process.env.OWNER_ID || config.owner_id;

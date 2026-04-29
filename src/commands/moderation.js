@@ -43,9 +43,7 @@ export const command = {
     "case",
     "editcase",
   ],
-  async execute({ message, args, config }) {
-    const cmd = message.content.slice(config.prefix.length).trim().split(/\s+/)[0].toLowerCase();
-
+  async execute({ message, args, config, cmd }) {
     if (cmd === "kick") {
       if (!message.member.permissions.has(PermissionsBitField.Flags.KickMembers)) {
         await message.channel.send("```\n❌ You need Kick Members permission.\n```");

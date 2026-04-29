@@ -168,8 +168,7 @@ export const command = {
     "triggered",
     "trash",
   ],
-  async execute({ message, args, config }) {
-    const cmd = message.content.split(/\s+/)[0].replace(config.prefix, "").toLowerCase();
+  async execute({ message, args, config, cmd }) {
     try {
       const target = await getTargetUser(message);
       const buffer = await fetchAvatarBuffer(target);

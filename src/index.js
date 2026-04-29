@@ -65,7 +65,7 @@ client.on("messageCreate", async (message) => {
   if (!command) return;
 
   try {
-    await command.execute({ client, message, args, config });
+    await command.execute({ client, message, args, config, cmd: name });
   } catch (err) {
     console.error(err);
     await message.channel.send("```\n❌ Command failed. Check logs.\n```");
