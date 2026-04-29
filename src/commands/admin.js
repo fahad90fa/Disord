@@ -2,6 +2,7 @@ import { EmbedBuilder, PermissionsBitField } from "discord.js";
 import os from "node:os";
 import { db } from "../db.js";
 import { getGiveawaysData, saveGiveawaysData } from "../state.js";
+import { saveConfig } from "../config.js";
 
 const giveaways = new Map();
 const giveawayTimeouts = new Map();
