@@ -1,4 +1,4 @@
-import { EmbedBuilder, PermissionsBitField } from "discord.js";
+import { EmbedBuilder, PermissionsBitField, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } from "discord.js";
 import { addModCase, getModCases, getWarnings, saveModCases, saveWarnings, addWarning } from "../state.js";
 
 function parseDuration(raw) {
@@ -83,17 +83,48 @@ export const command = {
         await message.channel.send("```\n❌ You can't ban this user!\n```");
         return;
       }
-      if (member) {
-        await member.send({ embeds: [new EmbedBuilder().setTitle("🔨 You were banned").setDescription(`**Server:** ${message.guild.name}\n**Reason:** ${reason || "No reason provided"}`).setColor(0xe74c3c)] }).catch(() => {});
+
+      const confirmEmbed = new EmbedBuilder()
+        .setTitle("⚠️ Confirm Ban")
+        .setDescription(`Are you sure you want to ban <@${userId}>?\n**Reason:** ${reason || "No reason provided"}`)
+        .setColor(0xf1c40f);
+
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("confirm_ban").setLabel("Confirm").setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId("cancel_ban").setLabel("Cancel").setStyle(ButtonStyle.Secondary)
+      );
+
+      const response = await message.channel.send({ embeds: [confirmEmbed], components: [row] });
+
+      try {
+        const confirmation = await response.awaitMessageComponent({
+          filter: (i) => i.user.id === message.author.id,
+          time: 30000,
+          componentType: ComponentType.Button,
+        });
+
+        if (confirmation.customId === "confirm_ban") {
+          if (member) {
+            await member.send({ embeds: [new EmbedBuilder().setTitle("🔨 You were banned").setDescription(`**Server:** ${message.guild.name}\n**Reason:** ${reason || "No reason provided"}`).setColor(0xe74c3c)] }).catch(() => {});
+          }
+          await message.guild.members.ban(userId, { reason: `Banned by ${message.author.tag} | ${reason || "No reason provided"}` });
+          const caseEntry = addModCase(message.guild.id, { type: "ban", user_id: userId, moderator_id: message.author.id, reason: reason || "No reason provided" });
+          
+          await confirmation.update({
+            embeds: [new EmbedBuilder().setTitle("🔨 Member Banned").setColor(0xe74c3c).setTimestamp(new Date()).addFields(
+              { name: "User ID", value: `\`${userId}\``, inline: true },
+              { name: "Moderator", value: `${message.member}`, inline: true },
+              { name: "Reason", value: reason || "No reason provided", inline: false },
+              { name: "Case ID", value: `#${caseEntry.case_id}`, inline: true },
+            )],
+            components: [],
+          });
+        } else {
+          await confirmation.update({ content: "❌ Ban cancelled.", embeds: [], components: [] });
+        }
+      } catch (e) {
+        await response.edit({ content: "❌ Confirmation timed out.", embeds: [], components: [] });
       }
-      await message.guild.members.ban(userId, { reason: `Banned by ${message.author.tag} | ${reason || "No reason provided"}` });
-      const caseEntry = addModCase(message.guild.id, { type: "ban", user_id: userId, moderator_id: message.author.id, reason: reason || "No reason provided" });
-      await message.channel.send({ embeds: [new EmbedBuilder().setTitle("🔨 Member Banned").setColor(0xe74c3c).setTimestamp(new Date()).addFields(
-        { name: "User ID", value: `\`${userId}\``, inline: true },
-        { name: "Moderator", value: `${message.member}`, inline: true },
-        { name: "Reason", value: reason || "No reason provided", inline: false },
-        { name: "Case ID", value: `#${caseEntry.case_id}`, inline: true },
-      )] });
       return;
     }
 
@@ -107,10 +138,38 @@ export const command = {
         await message.channel.send("```\n❌ Usage: !unban <user_id>\n```");
         return;
       }
-      await message.guild.members.unban(userId, `Unbanned by ${message.author.tag}`).catch(async () => {
-        await message.channel.send("```\n❌ User not found in ban list!\n```");
-      });
-      await message.channel.send({ embeds: [new EmbedBuilder().setTitle("✅ User Unbanned").setDescription(`User ID \`${userId}\` has been unbanned.`).setColor(0x2ecc71)] });
+
+      const confirmEmbed = new EmbedBuilder()
+        .setTitle("✅ Confirm Unban")
+        .setDescription(`Are you sure you want to unban User ID: \`${userId}\`?`)
+        .setColor(0x2ecc71);
+
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("confirm_unban").setLabel("Confirm").setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId("cancel_unban").setLabel("Cancel").setStyle(ButtonStyle.Secondary)
+      );
+
+      const response = await message.channel.send({ embeds: [confirmEmbed], components: [row] });
+
+      try {
+        const confirmation = await response.awaitMessageComponent({
+          filter: (i) => i.user.id === message.author.id,
+          time: 30000,
+          componentType: ComponentType.Button,
+        });
+
+        if (confirmation.customId === "confirm_unban") {
+          await message.guild.members.unban(userId, `Unbanned by ${message.author.tag}`).catch(async () => {
+            await confirmation.update({ content: "```\n❌ User not found in ban list!\n```", embeds: [], components: [] });
+            return;
+          });
+          await confirmation.update({ embeds: [new EmbedBuilder().setTitle("✅ User Unbanned").setDescription(`User ID \`${userId}\` has been unbanned.`).setColor(0x2ecc71)], components: [] });
+        } else {
+          await confirmation.update({ content: "❌ Unban cancelled.", embeds: [], components: [] });
+        }
+      } catch (e) {
+        await response.edit({ content: "❌ Confirmation timed out.", embeds: [], components: [] });
+      }
       return;
     }
 
