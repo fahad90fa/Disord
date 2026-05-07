@@ -2,7 +2,7 @@ import "dotenv/config";
 import fs from "node:fs";
 import path from "node:path";
 import { Client, GatewayIntentBits, Partials, Collection } from "discord.js";
-import { loadConfig } from "./config.js";
+import { loadConfig, getGuildConfig } from "./config.js";
 import { setupLavalink } from "./lavalink.js";
 
 const config = loadConfig();
@@ -43,7 +43,7 @@ client.once("clientReady", async () => {
   await setupLavalink(client, config);
   for (const mod of client.commandModules) {
     if (typeof mod.register === "function") {
-      await mod.register(client, config);
+      await mod.register(client);
     }
   }
 });
@@ -51,12 +51,13 @@ client.once("clientReady", async () => {
 client.on("messageCreate", async (message) => {
   if (!message.guild || message.author.bot) return;
 
-  const hasPrefix = message.content.startsWith(config.prefix);
-  const isNoPrefixUser = config.noprefix_users?.includes(message.author.id);
+  const guildConfig = getGuildConfig(message.guild.id);
+  const hasPrefix = message.content.startsWith(guildConfig.prefix);
+  const isNoPrefixUser = guildConfig.noprefix_users?.includes(message.author.id);
 
   if (!hasPrefix && !isNoPrefixUser) return;
 
-  const content = hasPrefix ? message.content.slice(config.prefix.length) : message.content;
+  const content = hasPrefix ? message.content.slice(guildConfig.prefix.length) : message.content;
   const args = content.trim().split(/\s+/);
   const name = args.shift()?.toLowerCase();
   if (!name) return;
@@ -65,7 +66,7 @@ client.on("messageCreate", async (message) => {
   if (!command) return;
 
   try {
-    await command.execute({ client, message, args, config, cmd: name });
+    await command.execute({ client, message, args, config: guildConfig, cmd: name });
   } catch (err) {
     console.error(err);
     await message.channel.send("```\n❌ Command failed. Check logs.\n```");
@@ -73,9 +74,11 @@ client.on("messageCreate", async (message) => {
 });
 
 client.on("interactionCreate", async (interaction) => {
+  if (!interaction.guild) return;
+  const guildConfig = getGuildConfig(interaction.guild.id);
   for (const mod of client.commandModules) {
     if (typeof mod.handleInteraction === "function") {
-      const handled = await mod.handleInteraction({ client, interaction, config });
+      const handled = await mod.handleInteraction({ client, interaction, config: guildConfig });
       if (handled) {
         return;
       }

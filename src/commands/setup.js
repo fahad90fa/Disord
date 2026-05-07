@@ -3,7 +3,7 @@ import {
   EmbedBuilder,
   PermissionsBitField,
 } from "discord.js";
-import { saveConfig } from "../config.js";
+import { saveGuildConfig } from "../config.js";
 
 function buildStorefrontEmbed(config) {
   return new EmbedBuilder()
@@ -113,7 +113,7 @@ export const command = {
       config.admin_roles = message.member.roles.cache
         .filter((role) => role.id !== message.guild.roles.everyone.id)
         .map((role) => role.id);
-      saveConfig(config);
+      saveGuildConfig(message.guild.id, config);
 
       await salesChannel.send({ embeds: [buildStorefrontEmbed(config)] }).catch(() => {});
 
@@ -148,7 +148,7 @@ export const command = {
         await message.channel.send("```\n❌ Invalid channel type. Use sales, logs, welcome, or rules.\n```");
         return;
       }
-      saveConfig(config);
+      saveGuildConfig(message.guild.id, config);
       await message.channel.send(`✅ ${type} channel set to ${channel}`);
     }
   },

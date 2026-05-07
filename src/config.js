@@ -21,15 +21,30 @@ const DEFAULT_CONFIG = {
 
 export function loadConfig() {
   try {
+    if (!fs.existsSync("config.json")) {
+      fs.writeFileSync("config.json", JSON.stringify({ guilds: {} }, null, 4));
+    }
     const raw = fs.readFileSync("config.json", "utf8");
-    const parsed = JSON.parse(raw);
-    return { ...DEFAULT_CONFIG, ...parsed };
+    const config = JSON.parse(raw);
+    if (!config.guilds) config.guilds = {};
+    return config;
   } catch (err) {
-    fs.writeFileSync("config.json", JSON.stringify(DEFAULT_CONFIG, null, 4));
-    return { ...DEFAULT_CONFIG };
+    return { guilds: {} };
   }
 }
 
+export function getGuildConfig(guildId) {
+  const config = loadConfig();
+  return { ...DEFAULT_CONFIG, ...(config.guilds[guildId] || {}) };
+}
+
+export function saveGuildConfig(guildId, guildConfig) {
+  const config = loadConfig();
+  config.guilds[guildId] = guildConfig;
+  fs.writeFileSync("config.json", JSON.stringify(config, null, 4));
+}
+
 export function saveConfig(config) {
+  // Legacy support or for global settings if we decide to use it that way
   fs.writeFileSync("config.json", JSON.stringify(config, null, 4));
 }

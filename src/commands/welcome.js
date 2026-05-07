@@ -1,5 +1,5 @@
 import { EmbedBuilder, PermissionsBitField } from "discord.js";
-import { saveConfig } from "../config.js";
+import { saveGuildConfig, getGuildConfig } from "../config.js";
 
 const VALID_STYLES = ["main", "compact", "hacker", "matrix", "minimal", "cyberpunk", "line"];
 const AUTO_JOIN_ROLE_ID = "1490998019603042496";
@@ -85,7 +85,7 @@ export const command = {
       }
       config.welcome_channel = channel.id;
       config.welcome_style = resolveWelcomeStyle(config.welcome_style);
-      saveConfig(config);
+      saveGuildConfig(message.guild.id, config);
       await message.channel.send(`✅ Welcome channel set to ${channel}`);
       await channel.send("```\n🎉 Welcome system configured successfully.\n```").catch(() => {});
       return;
@@ -104,7 +104,7 @@ export const command = {
 
     if (cmd === "disablewelcome") {
       config.welcome_channel = null;
-      saveConfig(config);
+      saveGuildConfig(message.guild.id, config);
       await message.channel.send("```\n🔴 Welcome system disabled.\n```");
       return;
     }
@@ -136,27 +136,29 @@ export const command = {
         return;
       }
       config.welcome_style = resolveWelcomeStyle(style);
-      saveConfig(config);
+      saveGuildConfig(message.guild.id, config);
       await message.channel.send(`✅ Welcome style changed to **${config.welcome_style.toUpperCase()}**`);
     }
   },
 };
 
-export async function register(client, config) {
+export async function register(client) {
   if (client.welcomeListenerReady) return;
   client.welcomeListenerReady = true;
 
   client.on("guildMemberAdd", async (member) => {
     if (member.user.bot) return;
 
+    const guildConfig = getGuildConfig(member.guild.id);
+
     const autoRole = member.guild.roles.cache.get(AUTO_JOIN_ROLE_ID);
     if (autoRole) {
       await member.roles.add(autoRole).catch(() => {});
     }
 
-    if (!config.welcome_channel) return;
-    const channel = member.guild.channels.cache.get(String(config.welcome_channel));
+    if (!guildConfig.welcome_channel) return;
+    const channel = member.guild.channels.cache.get(String(guildConfig.welcome_channel));
     if (!channel?.isTextBased()) return;
-    await sendWelcome(channel, member, resolveWelcomeStyle(config.welcome_style));
+    await sendWelcome(channel, member, resolveWelcomeStyle(guildConfig.welcome_style));
   });
 }

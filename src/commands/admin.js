@@ -2,7 +2,7 @@ import { EmbedBuilder, PermissionsBitField } from "discord.js";
 import os from "node:os";
 import { db } from "../db.js";
 import { getGiveawaysData, saveGiveawaysData } from "../state.js";
-import { saveConfig } from "../config.js";
+import { saveGuildConfig } from "../config.js";
 
 const giveaways = new Map();
 const giveawayTimeouts = new Map();
@@ -199,7 +199,7 @@ export const command = {
           return;
         }
         config.noprefix_users.push(target.id);
-        saveConfig(config);
+        saveGuildConfig(message.guild.id, config);
         await message.channel.send(`✅ Added <@${target.id}> to the no-prefix list.`);
         return;
       }
@@ -214,7 +214,7 @@ export const command = {
           return;
         }
         config.noprefix_users = config.noprefix_users.filter(id => id !== target.id);
-        saveConfig(config);
+        saveGuildConfig(message.guild.id, config);
         await message.channel.send(`✅ Removed <@${target.id}> from the no-prefix list.`);
         return;
       }

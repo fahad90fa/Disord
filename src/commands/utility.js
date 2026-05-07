@@ -1,6 +1,7 @@
 import { AttachmentBuilder, EmbedBuilder } from "discord.js";
 import QRCode from "qrcode";
 import crypto from "node:crypto";
+import { getGuildConfig } from "../config.js";
 import {
   getAfkData,
   getReminders,
@@ -218,7 +219,7 @@ export const command = {
   },
 };
 
-export async function register(client, config) {
+export async function register(client) {
   if (!client.utilityReminderInterval) {
     client.utilityReminderInterval = setInterval(() => {
       processReminders(client).catch(() => {});
@@ -249,21 +250,22 @@ export async function register(client, config) {
       const authorName = before.author.username || "Unknown User";
       const authorAvatar = before.author.displayAvatarURL?.() || null;
 
-        editedMessages.set(before.channel.id, {
-          before: before.content,
-          after: after.content,
-          authorName,
-          authorAvatar,
-          timestamp: new Date().toISOString(),
-        });
+      editedMessages.set(before.channel.id, {
+        before: before.content,
+        after: after.content,
+        authorName,
+        authorAvatar,
+        timestamp: new Date().toISOString(),
+      });
     });
 
     client.on("messageCreate", async (message) => {
       if (!message.guild || message.author.bot) return;
+      const guildConfig = getGuildConfig(message.guild.id);
       const afkData = getAfkData();
       const userKey = String(message.author.id);
 
-      const isAfkCmd = message.content.startsWith(`${config.prefix}afk`) || message.content.trim().toLowerCase().startsWith("afk");
+      const isAfkCmd = message.content.startsWith(`${guildConfig.prefix}afk`) || message.content.trim().toLowerCase().startsWith("afk");
       if (afkData[userKey] && !isAfkCmd) {
         const info = afkData[userKey];
         const duration = formatDuration((Date.now() - new Date(info.time).getTime()) / 1000);

@@ -1,6 +1,6 @@
 import { AttachmentBuilder, EmbedBuilder, PermissionsBitField } from "discord.js";
 import fs from "node:fs";
-import { saveConfig } from "../config.js";
+import { saveGuildConfig } from "../config.js";
 
 const BANNER_PATH = "database/banner.jpg";
 
@@ -213,7 +213,7 @@ export const command = {
 
     config.rules_channel = targetChannel.id;
     config.rules_message_id = first.id;
-    saveConfig(config);
+    saveGuildConfig(message.guild.id, config);
 
     await message.channel.send(`✅ Rules posted in ${targetChannel}`);
   },
